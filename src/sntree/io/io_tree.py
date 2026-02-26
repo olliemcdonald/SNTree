@@ -1,7 +1,7 @@
 import dendropy
 from ete4 import Tree
 
-def read_tree(path="/Users/thomasmcdonald/Partners HealthCare Dropbox/Thomas McDonald/michor/projects/scDNA/data/C1/medicc2/C1_final_tree.new",
+def read_tree(path,
               remove_diploid=True, diploid_name="diploid"):
   # Imports the medicc2 tree in Newick format, resolves multifurcations
   # and removes 0-length edges, roots to diploid, and optionally removes

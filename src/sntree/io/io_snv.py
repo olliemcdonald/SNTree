@@ -39,12 +39,12 @@ def import_snv_vcfs(folder_path, pattern="_somatic.pileup.vcf.gz"):
 def vcf_to_tables(
     vcf,
     min_cells=1,
-    normal_name="/michorlab/mcdonald/single_cell_cna/data/pancancer/C1/normal_cells/C1_normal_markdup.bam",
+    normal_name=None,
     fill_missing_normal_with=0,  # keep shapes stable without using normal yet
 ):
     # vcf: cyvcf2 VCF object
     # min_cells: minimum number of cells that must have >0 alt reads to keep the variant
-    # normal_name: sample name of the normal cell (if any) in the VCF ex. "/michorlab/mcdonald/single_cell_cna/data/pancancer/C1/normal_cells/C1_normal_markdup.bam"
+    # normal_name: sample name of the normal cell (if any) in the VCF ex. "XXX/X_normal_markdup.bam"
     # fill_missing_normal_with: value to fill in for normal ref/alt counts if normal is not present
     samples = list(vcf.samples)
 
