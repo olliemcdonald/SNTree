@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sntree"
+version = "0.1.0"
+description = "Phylogeny-aware single-cell SNV inference under copy number variation"
+authors = [{ name = "Thomas O McDonald" }]
+readme = "README.txt"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "pandas",
+    "ete4",
+    "cyvcf2",
+    "dendropy"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+sntree = "sntree.cli:main"
