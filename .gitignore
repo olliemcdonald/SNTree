@@ -1,0 +1,68 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Data
+data/
+*.out
+
+# Distribution / packaging
+.Python
+env/
+venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+.coverage
+.tox/
+.pytest_cache/
+htmlcov/
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.bak
+*.swo
+*~
+.DS_Store # macOS specific
+Thumbs.db # Windows specific
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+.flaskenv
+
+# Miscellaneous
+*.log
+*.sqlite3
+*.db
+
+# Latex files
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# Other docs, etc
+*.docx
+*/logs/
+.ipynb_checkpoints

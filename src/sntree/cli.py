@@ -9,26 +9,103 @@ from sntree.config import Config
 
 def main():
 
-    parser = argparse.ArgumentParser(prog="sntree")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        prog="sntree",
+        description=(
+            "SNTree: Phylogeny-aware single-cell SNV inference "
+            "under copy number variation.\n\n"
+            "Typical usage:\n"
+            "  sntree pipeline SAMPLE /path/to/input /path/to/output\n"
+            "  sntree em SAMPLE /path/to/input /path/to/output\n"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
 
-    for cmd in ["ml", "em", "refine", "pipeline"]:
-        sp = subparsers.add_parser(cmd)
-        sp.add_argument("sample")
-        sp.add_argument("input_root")
-        sp.add_argument("output_root")
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        help="Available commands"
+    )
 
-        sp.add_argument("--alpha-init", type=float)
-        sp.add_argument("--beta-init", type=float)
-        sp.add_argument("--p0", type=float)
-        sp.add_argument("--batch-size", type=int)
-        sp.add_argument("--max-iters", type=int)
-        sp.add_argument("--em-max-iters", type=int)
+    # Common arguments helper
+    def add_common_args(sp):
+        sp.add_argument(
+            "sample",
+            help="Sample name (corresponding to folder under input_root)"
+        )
+        sp.add_argument(
+            "input_root",
+            help="Root directory containing sample input data"
+        )
+        sp.add_argument(
+            "output_root",
+            help="Root directory where outputs will be written"
+        )
+
+        sp.add_argument(
+            "--alpha-init",
+            type=float,
+            help="Initial alpha value (false positive rate)"
+        )
+        sp.add_argument(
+            "--beta-init",
+            type=float,
+            help="Initial beta value (false negative/dropout rate)"
+        )
+        sp.add_argument(
+            "--p0",
+            type=float,
+            help="Sequencing error baseline probability"
+        )
+        sp.add_argument(
+            "--batch-size",
+            type=int,
+            help="Batch size for likelihood computation"
+        )
+        sp.add_argument(
+            "--max-iters",
+            type=int,
+            help="Maximum NNI iterations for subtree refinement"
+        )
+        sp.add_argument(
+            "--em-max-iters",
+            type=int,
+            help="Maximum EM iterations"
+        )
+
+    # ml
+    sp_ml = subparsers.add_parser(
+        "ml",
+        help="Run CNA-aware maximum likelihood SNV placement"
+    )
+    add_common_args(sp_ml)
+
+    # em
+    sp_em = subparsers.add_parser(
+        "em",
+        help="Run EM estimation of alpha and beta parameters"
+    )
+    add_common_args(sp_em)
+
+    # refine
+    sp_refine = subparsers.add_parser(
+        "refine",
+        help="Refine CNA-identical subtrees using SNV likelihood"
+    )
+    add_common_args(sp_refine)
+
+    # pipeline
+    sp_pipeline = subparsers.add_parser(
+        "pipeline",
+        help="Run full pipeline (EM → subtree refinement)"
+    )
+    add_common_args(sp_pipeline)
 
     args = parser.parse_args()
 
     config = Config()
 
+    # Apply overrides
     if args.alpha_init is not None:
         config.alpha_init = args.alpha_init
     if args.beta_init is not None:
@@ -75,6 +152,7 @@ def main():
             placements = ml_results["placements"]
             alpha = ml_results.get("alpha", config.alpha_init)
             beta = ml_results.get("beta", config.beta_init)
+
         elif os.path.exists(ml_legacy_path):
             with open(ml_legacy_path, "rb") as f:
                 placements = pickle.load(f)
