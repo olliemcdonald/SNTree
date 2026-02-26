@@ -1,5 +1,4 @@
 import numpy as np
-#from scipy.stats import binom
 from sntree.likelihood.numba_kernels import logpmf_binom
 from sntree.constants import NEG_INF, MU_ERR
 from sntree.likelihood.quick_null_stats import quick_null_stats
@@ -107,8 +106,6 @@ def em_alpha_beta(
                     n = ns[mask_cov]
                     p1v = p1[mask_cov]
 
-                    #log1_vec = np.log(max(alpha,1e-12))    + binom.logpmf(k,n,p1v)
-                    #log0_vec = np.log(max(1-alpha,1e-12))  + binom.logpmf(k,n,p0)
                     log1_vec = np.log(max(alpha,1e-12))    + logpmf_binom(k,n,p1v)
                     log0_vec = np.log(max(1-alpha,1e-12))  + logpmf_binom(k,n,p0)
                     qs = sigmoid_logdiff(log1_vec, log0_vec)
@@ -194,8 +191,6 @@ def em_alpha_beta(
                     n = ns[mask]
                     p1v = p1[mask]
 
-                    #log1 = np.log(max(alpha,1e-12))    + binom.logpmf(k,n,p1v)
-                    #log0 = np.log(max(1-alpha,1e-12)) + binom.logpmf(k,n,p0)
                     log1 = np.log(max(alpha,1e-12))    + logpmf_binom(k,n,p1v)
                     log0 = np.log(max(1-alpha,1e-12)) + logpmf_binom(k,n,p0)
                     q_out.extend(sigmoid_logdiff(log1, log0).tolist())
@@ -215,8 +210,6 @@ def em_alpha_beta(
                     n = ns[mask]
                     pAv = p_eff[mask]
 
-                    #log1 = np.log(max(1-beta,1e-12)) + binom.logpmf(k,n,pAv)
-                    #log0 = np.log(max(beta,1e-12))   + binom.logpmf(k,n,p0)
                     log1 = np.log(max(1-beta,1e-12)) + logpmf_binom(k,n,pAv)
                     log0 = np.log(max(beta,1e-12))   + logpmf_binom(k,n,p0)
                     w_in.extend(sigmoid_logdiff(log1, log0).tolist())

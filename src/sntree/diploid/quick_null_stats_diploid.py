@@ -1,5 +1,4 @@
 import numpy as np
-#from scipy.stats import binom
 from sntree.likelihood.numba_kernels import logpmf_binom
 from sntree.constants import NEG_INF, MU_ERR
 
@@ -22,7 +21,6 @@ def quick_null_stats_diploid(cna_tree, snv_dataset, snv_idx, p0=MU_ERR, alpha=0.
     k = ks[mask]
     n = ns[mask]
 
-    #logL = np.sum(binom.logpmf(k, n, p0))
     logL = np.sum(logpmf_binom(k, n, p0))
     total_alt = int(np.sum(k))
     alt_cells = int(np.sum(k > 0))

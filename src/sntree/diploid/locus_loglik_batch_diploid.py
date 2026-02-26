@@ -1,5 +1,4 @@
 import numpy as np
-#from scipy.stats import binom
 from sntree.likelihood.numba_kernels import logpmf_binom
 from sntree.constants import NEG_INF, MU_ERR
 
@@ -30,15 +29,12 @@ def locus_loglik_batch_diploid(
 
     # Binomial components
     ll_half = np.full((B, L), 0.0)
-    #ll_half[mask_cov] = binom.logpmf(ks[mask_cov], ns[mask_cov], 0.5)
     ll_half[mask_cov] = logpmf_binom(ks[mask_cov], ns[mask_cov], 0.5)
 
     ll_p0 = np.full((B, L), 0.0)
-    #ll_p0[mask_cov] = binom.logpmf(ks[mask_cov], ns[mask_cov], p0)
     ll_p0[mask_cov] = logpmf_binom(ks[mask_cov], ns[mask_cov], p0)
 
     ll_p1 = np.full((B, L), 0.0)
-    #ll_p1[mask_cov] = binom.logpmf(ks[mask_cov], ns[mask_cov], p1_fp)
     ll_p1[mask_cov] = logpmf_binom(ks[mask_cov], ns[mask_cov], p1_fp)
 
     # Inside mixture (G = 1)

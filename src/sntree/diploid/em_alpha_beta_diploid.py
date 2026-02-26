@@ -1,7 +1,7 @@
 import numpy as np
-from scipy.stats import binom
-from sntree.constants import NEG_INF, MU_ERR
 
+from sntree.likelihood.numba_kernels import logpmf_binom
+from sntree.constants import NEG_INF, MU_ERR
 from .quick_null_stats_diploid import quick_null_stats_diploid
 from .locus_loglik_batch_diploid import locus_loglik_batch_diploid
 
@@ -76,8 +76,8 @@ def em_alpha_beta_diploid(
                     n = ns[mask_cov]
 
                     # responsibilities for false positives
-                    log1 = np.log(max(alpha,1e-12))    + binom.logpmf(k,n,p0)
-                    log0 = np.log(max(1-alpha,1e-12))  + binom.logpmf(k,n,p0)
+                    log1 = np.log(max(alpha,1e-12))    + logpmf_binom(k,n,0.5)
+                    log0 = np.log(max(1-alpha,1e-12))  + logpmf_binom(k,n,p0)
                     q_out.extend(sigmoid_logdiff(log1, log0).tolist())
 
                 if not batch_full:
@@ -127,8 +127,8 @@ def em_alpha_beta_diploid(
                     mask = leaf_outside & mask_cov
                     k = ks[mask]
                     n = ns[mask]
-                    log1 = np.log(max(alpha,1e-12))    + binom.logpmf(k,n,p0)
-                    log0 = np.log(max(1-alpha,1e-12))  + binom.logpmf(k,n,p0)
+                    log1 = np.log(max(alpha,1e-12))    + logpmf_binom(k,n,0.5)
+                    log0 = np.log(max(1-alpha,1e-12))  + logpmf_binom(k,n,p0)
                     q_out.extend(sigmoid_logdiff(log1, log0).tolist())
 
                     # inside (G=1)
@@ -140,8 +140,8 @@ def em_alpha_beta_diploid(
                     # compare:
                     #   1: mutated -> Binom(0.5)
                     #   0: dropout -> Binom(p0)
-                    log1 = np.log(max(1-beta,1e-12)) + binom.logpmf(k,n,0.5)
-                    log0 = np.log(max(beta,1e-12))   + binom.logpmf(k,n,p0)
+                    log1 = np.log(max(1-beta,1e-12)) + logpmf_binom(k,n,0.5)
+                    log0 = np.log(max(beta,1e-12))   + logpmf_binom(k,n,p0)
                     w_in.extend(sigmoid_logdiff(log1, log0).tolist())
 
         # M-step

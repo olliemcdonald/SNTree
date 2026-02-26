@@ -1,5 +1,4 @@
 import numpy as np
-#from scipy.stats import binom
 from sntree.likelihood.numba_kernels import logpmf_binom, logsumexp2_matrix, logsumexp_axis2
 from sntree.constants import NEG_INF, MU_ERR
 
@@ -52,12 +51,9 @@ def locus_loglik_batch(
             p1_vec[leaf_idx] = (1.0 / c_leaf) if c_leaf > 0 else 0.0
 
     # Precompute absent-channel leaf likelihood (B, L)
-    #lp1 = binom.logpmf(ks, ns, p1_vec)
-    #lp0 = binom.logpmf(ks, ns, p0)
     lp1 = logpmf_binom(ks, ns, p1_vec)
     lp0 = logpmf_binom(ks, ns, p0)
 
-    #F_absent_leaf = logsumexp(np.stack([loga + lp1, log1ma + lp0]), axis=0)  # shape (B, L)
     F_absent_leaf = logsumexp2_matrix(loga+lp1, log1ma + lp0)
 
     # Initialize DP storage
@@ -83,22 +79,16 @@ def locus_loglik_batch(
             k = ks[:, col]  # (B,)
 
             if c_u == 0:
-                #lp0  = binom.logpmf(k, n, p0)
-                #lpA0 = binom.logpmf(k, n, 0.0)
                 lp0  = logpmf_binom(k, n, p0)
                 lpA0 = logpmf_binom(k, n, 0.0)
-                #F_present[u] = logsumexp(np.stack([log1mb + lpA0, logb + lp0]),axis=0)[:, None]
                 F_present[u] = logsumexp2_matrix(log1mb + lpA0, logb + lp0)#[:, None] at end previously
             else:
                 a = np.arange(c_u + 1) / c_u               # multiplicity fractions
-                #lpA = binom.logpmf(k[:,None], n[:,None], a)  # (B, c_u+1)
                 lpA = logpmf_binom(k[:,None], n[:,None], a)  # (B, c_u+1)
 
-                #lp0_scalar = binom.logpmf(k, n, p0)          # (B,)
                 lp0_scalar = logpmf_binom(k, n, p0)          # (B,)
                 lp0_vec    = np.tile(lp0_scalar[:,None], (1, lpA.shape[1]))  # (B, c_u+1)
 
-                #F_present[u] = logsumexp(np.stack([log1mb + lpA, logb + lp0_vec]),axis=0)
                 F_present[u] = logsumexp2_matrix(log1mb + lpA, logb + lp0_vec)
 
             # absent-channel at leaf
@@ -118,7 +108,6 @@ def locus_loglik_batch(
                 Fc = F_present[ch]                   # (B, c_ch+1)
 
                 # vectorized convolution
-                #Fp += logsumexp(logM[None,:,:] + Fc[:,None,:],axis=2)
                 Fp += logsumexp_axis2(logM[None,:,:] + Fc[:,None,:])
 
             F_present[u] = Fp

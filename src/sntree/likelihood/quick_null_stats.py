@@ -1,7 +1,6 @@
 # quick_null_stats.py
 
 import numpy as np
-#from scipy.stats import binom
 from sntree.likelihood.numba_kernels import logpmf_binom, logsumexp2_matrix
 from sntree.constants import NEG_INF, MU_ERR
 
@@ -57,12 +56,9 @@ def quick_null_stats(cna_tree, snv_dataset, snv_idx,
     ns_v = ns[valid]
     p1_v = p1_vec[valid]
 
-    #lp1 = binom.logpmf(ks_v, ns_v, p1_v)
-    #lp0 = binom.logpmf(ks_v, ns_v, p0)
     lp1 = logpmf_binom(ks_v, ns_v, p1_v)
     lp0 = logpmf_binom(ks_v, ns_v, p0)
 
-    #leaf_null_ll = logsumexp(np.vstack([loga + lp1, log1ma + lp0]),axis=0)
     leaf_null_ll = logsumexp2_matrix(loga + lp1, log1ma + lp0)
 
     logL_null = float(leaf_null_ll.sum())

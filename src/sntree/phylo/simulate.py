@@ -1,9 +1,7 @@
 import numpy as np
 import pandas as pd
-import math
 import random
 from ete4 import Tree
-#from ete4.treeview import TreeStyle, NodeStyle, TextFace
 
 
 def generate_tree(cell_count, rng=None):
@@ -324,8 +322,7 @@ def simulate_reads(tree, snv_ids, snv_cna_idx, nbinom_mu=10, nbinom_alpha=0.05, 
             p_alt = m / cn if cn > 0 else 0.0
 
             cov = rng.negative_binomial(r, p)
-#            if(p_alt < 0 or p_alt > 1 or math.isnan(p_alt)):
-#                print("P Error ", p_alt, " M ", m, " CN ", cn)
+
             alt_reads = rng.binomial(cov, p_alt)
             ref_reads = cov - alt_reads
 
