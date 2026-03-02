@@ -284,7 +284,7 @@ def refine_all_groups(
 
     cna_idx, _ = cna_lookups(cna_profiles)
 
-    # Build barcode/cell maps explicitly
+    # Build barcode maps
     barcode_to_cell, cell_to_barcode = barcode_cell_maps(sample_mapping)
 
     dist_df = load_cna_distance_matrix(cna_distance_tsv, drop_diploid=True)
@@ -305,34 +305,34 @@ def refine_all_groups(
 
         group_id = f"group_{i:03d}"
         newick_path = os.path.join(output_dir, f"{group_id}.newick")
+        assign_path = os.path.join(output_dir, f"{group_id}_snv_assignments.tsv")
 
         # ----------------------------------------------------
         # Resume support: restore subtree if already exists
         # ----------------------------------------------------
-        if os.path.exists(newick_path):
+        if os.path.exists(newick_path) and os.path.exists(assign_path):
 
             print(f"[{now()}] Restoring completed group {i+1} (cells={len(group_cells)})")
 
             refined_subtree = Tree(open(newick_path).read().strip(), parser=1)
 
-            # Convert CELL names back to BARCODE names
+            # Convert subtree leaves to BARCODE
             for leaf in refined_subtree.leaves():
-                if leaf.name in cell_to_barcode:
-                    leaf.name = cell_to_barcode[leaf.name]
-                else:
-                    warnings.warn(
-                        f"[refine] Leaf name '{leaf.name}' not found in cell_to_barcode map. "
-                        "Leaving as-is."
-                    )
+                leaf.name = cell_to_barcode.get(leaf.name, leaf.name)
 
+            # Graft subtree
             # Detach current children under MRCA
             for child in list(mrca.children):
                 child.detach()
-
             # Attach saved subtree children
             for child in list(refined_subtree.children):
                 child.detach()
                 mrca.add_child(child)
+
+            # Merge SNV assignments
+            group_assign_df = pd.read_csv(assign_path, sep="\t")
+            for _, row in group_assign_df.iterrows():
+                final_assignments[row["snv"]] = row["node"]
 
             continue
 
@@ -355,7 +355,7 @@ def refine_all_groups(
             vcf_path,
             snv_index,
             normal_name=normal_name,
-            name_map=barcode_to_cell,  # ensure correct mapping used
+            name_map=barcode_to_cell,
             exclude_outside=exclude_outside,
             alpha=alpha,
             beta=beta,
@@ -368,7 +368,7 @@ def refine_all_groups(
         if res is None:
             continue
 
-        # Load subtree from result
+        # Load subtree
         refined_subtree = Tree(res.newick.strip(), parser=1)
 
         # Convert CELL names back to BARCODE names
@@ -380,6 +380,14 @@ def refine_all_groups(
                     f"[refine] Leaf name '{leaf.name}' not found in cell_to_barcode map. "
                     "Leaving as-is."
                 )
+
+        # Update res.newick (BARCODE version)
+        res.newick = refined_subtree.write(parser=1).strip()
+
+        # Convert assignment nodes to BARCODE
+        res.assignments["node"] = res.assignments["node"].apply(
+            lambda x: cell_to_barcode.get(x, x)
+        )
 
         # Graft subtree into main tree
         for child in list(mrca.children):
@@ -396,15 +404,13 @@ def refine_all_groups(
         res.group_id = group_id
         results.append(res)
 
-        # ---- Write outputs ----
+        # Write outputs (BARCODE)
         with open(newick_path, "w") as f:
             f.write(res.newick + "\n")
 
-        assign_path = os.path.join(output_dir, f"{group_id}_snv_assignments.tsv")
         res.assignments.to_csv(assign_path, sep="\t", index=False)
 
-        ll_path = os.path.join(output_dir, f"{group_id}_likelihood.txt")
-        with open(ll_path, "w") as f:
+        with open(os.path.join(output_dir, f"{group_id}_likelihood.txt"), "w") as f:
             f.write(f"{res.total_ll}\n")
 
         group_runtime = time.time() - t_group
