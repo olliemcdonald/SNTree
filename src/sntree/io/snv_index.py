@@ -162,7 +162,7 @@ def filter_snvs_for_group_from_assignments(
             continue
 
         node_name_lower = node_name.lower()
-        if exclude_null and node_name_lower == "null":
+        if exclude_null and node_name_lower == "Null":
             continue
         if exclude_root and node_name_lower == "root":
             continue

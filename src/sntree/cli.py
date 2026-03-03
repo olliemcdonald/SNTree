@@ -15,8 +15,10 @@ def main():
             "SNTree: Phylogeny-aware single-cell SNV inference "
             "under copy number variation.\n\n"
             "Typical usage:\n"
-            "  sntree pipeline SAMPLE /path/to/input /path/to/output\n"
-            "  sntree em SAMPLE /path/to/input /path/to/output\n"
+            "  sntree preprocess SAMPLE /input /output\n"
+            "  sntree em SAMPLE /input /output\n"
+            "  sntree refine SAMPLE /input /output\n"
+            "  sntree pipeline SAMPLE /input /output\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -27,7 +29,10 @@ def main():
         help="Available commands"
     )
 
+    # ---------------------------------------------------------
     # Common arguments helper
+    # ---------------------------------------------------------
+
     def add_common_args(sp):
         sp.add_argument(
             "sample",
@@ -63,7 +68,7 @@ def main():
             help="Batch size for likelihood computation"
         )
         sp.add_argument(
-            "--max-iters",
+            "--nni-max-iters",
             type=int,
             help="Maximum NNI iterations for subtree refinement"
         )
@@ -73,31 +78,53 @@ def main():
             help="Maximum EM iterations"
         )
 
+    # ---------------------------------------------------------
+    # preprocess
+    # ---------------------------------------------------------
+
+    sp_pre = subparsers.add_parser(
+        "preprocess",
+        help="Preprocess MEDICC2 tree (normalize + split CN-identical clades)"
+    )
+    add_common_args(sp_pre)
+
+    # ---------------------------------------------------------
     # ml
+    # ---------------------------------------------------------
+
     sp_ml = subparsers.add_parser(
         "ml",
         help="Run CNA-aware maximum likelihood SNV placement"
     )
     add_common_args(sp_ml)
 
+    # ---------------------------------------------------------
     # em
+    # ---------------------------------------------------------
+
     sp_em = subparsers.add_parser(
         "em",
         help="Run EM estimation of alpha and beta parameters"
     )
     add_common_args(sp_em)
 
+    # ---------------------------------------------------------
     # refine
+    # ---------------------------------------------------------
+
     sp_refine = subparsers.add_parser(
         "refine",
         help="Refine CNA-identical subtrees using SNV likelihood"
     )
     add_common_args(sp_refine)
 
+    # ---------------------------------------------------------
     # pipeline
+    # ---------------------------------------------------------
+
     sp_pipeline = subparsers.add_parser(
         "pipeline",
-        help="Run full pipeline (EM → subtree refinement)"
+        help="Run full pipeline (preprocess → EM → subtree refinement)"
     )
     add_common_args(sp_pipeline)
 
@@ -105,7 +132,10 @@ def main():
 
     config = Config()
 
-    # Apply overrides
+    # ---------------------------------------------------------
+    # Apply CLI overrides
+    # ---------------------------------------------------------
+
     if args.alpha_init is not None:
         config.alpha_init = args.alpha_init
     if args.beta_init is not None:
@@ -114,12 +144,20 @@ def main():
         config.p0 = args.p0
     if args.batch_size is not None:
         config.batch_size = args.batch_size
-    if args.max_iters is not None:
-        config.max_iters = args.max_iters
+    if args.nni_max_iters is not None:
+        config.nni_max_iters = args.nni_max_iters
     if args.em_max_iters is not None:
         config.em_max_iter = args.em_max_iters
 
-    if args.command == "ml":
+    # ---------------------------------------------------------
+    # Command dispatch
+    # ---------------------------------------------------------
+
+    if args.command == "preprocess":
+        from sntree.workflow.preprocess_tree import run_preprocess
+        run_preprocess(args.sample, args.input_root, args.output_root)
+
+    elif args.command == "ml":
         from sntree.workflow.ml import run_ml
         run_ml(args.sample, args.input_root, args.output_root, config)
 
@@ -130,9 +168,8 @@ def main():
     elif args.command == "refine":
         from sntree.workflow.refine import run_refine
 
-        sample_out = os.path.join(args.output_root, args.sample)
+        sample_out = os.path.join(args.output_root, args.sample, "sntree")
 
-        # Prefer EM results
         em_path = os.path.join(sample_out, "em", "em_results.pkl")
         ml_results_path = os.path.join(sample_out, "ml", "ml_results.pkl")
         ml_legacy_path = os.path.join(sample_out, "ml", "placements_ml.pkl")

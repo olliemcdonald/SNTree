@@ -107,7 +107,7 @@ def _placements_to_assignments(ete_tree: Tree, dataset, placements: Dict[int, Op
         snv_id = dataset.snv_ids[snv_idx]
 
         if node_idx is None:
-            node_name = "null"
+            node_name = "Null"
         else:
             node_name = node_list[node_idx].name
 
@@ -272,7 +272,7 @@ def refine_all_groups(
     batch_size: int = 64,
     max_iters: int = 50,
     init: str = "nj",
-) -> List[GroupResult]:
+):
 
     print(f"[{now()}] Starting subtree refinement")
     t0_total = time.time()
@@ -284,7 +284,6 @@ def refine_all_groups(
 
     cna_idx, _ = cna_lookups(cna_profiles)
 
-    # Build barcode maps
     barcode_to_cell, cell_to_barcode = barcode_cell_maps(sample_mapping)
 
     dist_df = load_cna_distance_matrix(cna_distance_tsv, drop_diploid=True)
@@ -296,7 +295,7 @@ def refine_all_groups(
     n_groups = sum(1 for g, _ in groups_mrca if len(g) > 1)
     print(f"[{now()}] {n_groups} CNA-identical groups with >1 cell found")
 
-    results: List[GroupResult] = []
+    results = []
 
     for i, (group_cells, mrca) in enumerate(groups_mrca):
 
@@ -307,42 +306,47 @@ def refine_all_groups(
         newick_path = os.path.join(output_dir, f"{group_id}.newick")
         assign_path = os.path.join(output_dir, f"{group_id}_snv_assignments.tsv")
 
+        print(
+            f"[{now()}] Refining group {i+1}/{len(groups_mrca)} "
+            f"(cells={len(group_cells)}, mrca={mrca.name})"
+        )
+
         # ----------------------------------------------------
-        # Resume support: restore subtree if already exists
+        # Resume support
         # ----------------------------------------------------
         if os.path.exists(newick_path) and os.path.exists(assign_path):
 
-            print(f"[{now()}] Restoring completed group {i+1} (cells={len(group_cells)})")
+            print(f"[{now()}] Restoring completed group {i+1}")
 
             refined_subtree = Tree(open(newick_path).read().strip(), parser=1)
 
-            # Convert subtree leaves to BARCODE
+            # Convert subtree leaves back to BARCODE
             for leaf in refined_subtree.leaves():
                 leaf.name = cell_to_barcode.get(leaf.name, leaf.name)
 
-            # Graft subtree
-            # Detach current children under MRCA
+            # Remove existing subtree under MRCA
             for child in list(mrca.children):
                 child.detach()
-            # Attach saved subtree children
+
+            # Attach restored subtree
             for child in list(refined_subtree.children):
                 child.detach()
                 mrca.add_child(child)
 
-            # Merge SNV assignments
+            # Restore assignments
             group_assign_df = pd.read_csv(assign_path, sep="\t")
+            group_assign_df["node"] = group_assign_df["node"].apply(
+                lambda x: cell_to_barcode.get(x, x)
+            )
+
             for _, row in group_assign_df.iterrows():
                 final_assignments[row["snv"]] = row["node"]
 
             continue
 
         # ----------------------------------------------------
-        # Otherwise run refinement
+        # Fresh refinement
         # ----------------------------------------------------
-        print(
-            f"[{now()}] Refining group {i+1}/{len(groups_mrca)} "
-            f"(cells={len(group_cells)}, mrca={mrca.name})"
-        )
         t_group = time.time()
 
         res = refine_group_tree(
@@ -368,28 +372,19 @@ def refine_all_groups(
         if res is None:
             continue
 
-        # Load subtree
         refined_subtree = Tree(res.newick.strip(), parser=1)
 
-        # Convert CELL names back to BARCODE names
+        # Convert CELL → BARCODE
         for leaf in refined_subtree.leaves():
-            if leaf.name in cell_to_barcode:
-                leaf.name = cell_to_barcode[leaf.name]
-            else:
-                warnings.warn(
-                    f"[refine] Leaf name '{leaf.name}' not found in cell_to_barcode map. "
-                    "Leaving as-is."
-                )
+            leaf.name = cell_to_barcode.get(leaf.name, leaf.name)
 
-        # Update res.newick (BARCODE version)
         res.newick = refined_subtree.write(parser=1).strip()
 
-        # Convert assignment nodes to BARCODE
         res.assignments["node"] = res.assignments["node"].apply(
             lambda x: cell_to_barcode.get(x, x)
         )
 
-        # Graft subtree into main tree
+        # Replace subtree under MRCA
         for child in list(mrca.children):
             child.detach()
 
@@ -397,14 +392,14 @@ def refine_all_groups(
             child.detach()
             mrca.add_child(child)
 
-        # Update global SNV assignments
+        # Update global assignments
         for _, row in res.assignments.iterrows():
             final_assignments[row["snv"]] = row["node"]
 
         res.group_id = group_id
         results.append(res)
 
-        # Write outputs (BARCODE)
+        # Write outputs
         with open(newick_path, "w") as f:
             f.write(res.newick + "\n")
 

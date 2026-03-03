@@ -3,7 +3,8 @@
 import os
 import time
 import pandas as pd
-from sntree.io.io_tree import read_tree
+
+from sntree.io.io_tree import read_preprocessed_tree
 from sntree.io.io_cna import import_cna_data, add_cna, cna_lookups, add_cna_bins, barcode_cell_maps
 from sntree.io.snv_index import build_snv_index
 from sntree.phylo.refinement import refine_all_groups
@@ -23,27 +24,30 @@ def run_refine(
     config
 ):
 
-    sample_out = os.path.join(output_root, sample, "refine")
+    sample_base = os.path.join(output_root, sample, "sntree")
+    sample_out = os.path.join(sample_base, "refine")
     os.makedirs(sample_out, exist_ok=True)
 
     print(f"[{now()}] Refinement stage started for sample {sample}")
     t0 = time.time()
 
     # ---- Paths ----
-    medicc_newick_fn = f"{input_root}/{sample}/medicc2/{sample}_final_tree.new"
+    tree_path = os.path.join(sample_base, "tree_preprocessed.new")
     sample_map_file = f"{input_root}/{sample}/chisel/{sample}.info.tsv"
     cna_file = f"{input_root}/{sample}/medicc2/{sample}_final_cn_profiles.tsv"
     cna_events_file = f"{input_root}/{sample}/medicc2/{sample}_copynumber_events_df.tsv"
     cna_distance_file = f"{input_root}/{sample}/medicc2/{sample}_pairwise_distances.tsv"
     vcf_path = f"{input_root}/{sample}/snv/consensus_singlecell_counts.vcf.gz"
 
-    # ---- Load tree ----
-    print(f"[{now()}] Loading CNA tree...")
-    tree = read_tree(
-        medicc_newick_fn,
-        remove_diploid=True,
-        diploid_name="diploid"
-    )
+    # ---- Load preprocessed tree ----
+    print(f"[{now()}] Loading preprocessed CNA tree...")
+    if not os.path.exists(tree_path):
+        raise RuntimeError(
+            f"Preprocessed tree not found at {tree_path}. "
+            "Run 'sntree preprocess' first."
+        )
+
+    tree = read_preprocessed_tree(tree_path)
 
     # ---- Load CNA ----
     print(f"[{now()}] Loading CNA profiles...")
@@ -83,7 +87,7 @@ def run_refine(
         beta=beta,
         p0=config.p0,
         batch_size=config.batch_size,
-        max_iters=config.max_iters,
+        max_iters=config.nni_max_iters,
         init="nj",
     )
 
@@ -105,7 +109,7 @@ def run_refine(
         "beta_used": beta,
         "p0": config.p0,
         "batch_size": config.batch_size,
-        "max_iters": config.max_iters,
+        "max_iters": config.nni_max_iters,
         "n_groups_refined": len(results),
         "runtime_sec": runtime
     }])
@@ -116,7 +120,7 @@ def run_refine(
         index=False
     )
 
-    # Save final assignments
+    # ---- Save final SNV assignments ----
     final_df = pd.DataFrame.from_dict(
         final_assignments, orient="index", columns=["node"]
     )

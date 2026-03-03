@@ -1,5 +1,9 @@
 from typing import Dict
-from ete4 import Tree # type: ignore
+from ete4 import Tree  # type: ignore
+import pandas as pd
+import os
+from sntree.io.io_tree import read_raw_medicc_tree
+
 
 def _attach_constant_cn(tree: Tree, cn_profile: Dict[int, Dict[str, int]]) -> None:
     for n in tree.traverse():
@@ -14,4 +18,3 @@ def _set_leaf_cell_ids(tree: Tree) -> None:
 
 def _tree_to_newick(tree: Tree) -> str:
     return tree.write(parser=1).strip()
-

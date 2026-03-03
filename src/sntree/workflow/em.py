@@ -6,7 +6,7 @@ import pickle
 import pandas as pd
 from cyvcf2 import VCF
 
-from sntree.io.io_tree import read_tree
+from sntree.io.io_tree import read_preprocessed_tree
 from sntree.io.io_cna import import_cna_data, add_cna, cna_lookups, add_cna_bins
 from sntree.io.io_snv import vcf_list_to_tables, snv_lookups
 from sntree.io.io_preprocess import build_all
@@ -19,14 +19,15 @@ def now():
 
 def run_em(sample, input_root, output_root, config):
 
-    sample_out = os.path.join(output_root, sample, "em")
+    sample_base = os.path.join(output_root, sample, "sntree")
+    sample_out = os.path.join(sample_base, "em")
     os.makedirs(sample_out, exist_ok=True)
 
     print(f"[{now()}] EM stage started for sample {sample}")
     t0 = time.time()
 
     # ---- Paths ----
-    medicc_newick_fn = f"{input_root}/{sample}/medicc2/{sample}_final_tree.new"
+    tree_path = os.path.join(sample_base, "tree_preprocessed.new")
     sample_map_file = f"{input_root}/{sample}/chisel/{sample}.info.tsv"
     cna_file = f"{input_root}/{sample}/medicc2/{sample}_final_cn_profiles.tsv"
     cna_events_file = f"{input_root}/{sample}/medicc2/{sample}_copynumber_events_df.tsv"
@@ -34,8 +35,14 @@ def run_em(sample, input_root, output_root, config):
     normal_name = f"{input_root}/{sample}/normal_cells/{sample}_normal_markdup.bam"
 
     # ---- Tree ----
-    print(f"[{now()}] Loading CNA tree...")
-    t = read_tree(medicc_newick_fn, remove_diploid=True, diploid_name="diploid")
+    print(f"[{now()}] Loading preprocessed CNA tree...")
+    if not os.path.exists(tree_path):
+        raise RuntimeError(
+            f"Preprocessed tree not found at {tree_path}. "
+            "Run 'sntree preprocess' first."
+        )
+
+    t = read_preprocessed_tree(tree_path)
 
     # ---- CNA ----
     print(f"[{now()}] Loading CNA profiles...")
