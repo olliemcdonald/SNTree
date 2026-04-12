@@ -89,7 +89,7 @@ def run_ml(sample, input_root, output_root, config):
         alpha=config.alpha_init,
         beta=config.beta_init,
         p0=config.p0,
-        pi0=0.0,
+        pi0=config.pi0,
         p1_fp_mode="one_over_c",
         min_alt_reads=2,
         min_alt_cells=2,

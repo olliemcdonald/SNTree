@@ -63,6 +63,11 @@ def main():
             help="Sequencing error baseline probability"
         )
         sp.add_argument(
+            "--pi0",
+            type=float,
+            help="Prior probability of a null SNV placement"
+        )
+        sp.add_argument(
             "--batch-size",
             type=int,
             help="Batch size for likelihood computation"
@@ -142,6 +147,8 @@ def main():
         config.beta_init = args.beta_init
     if args.p0 is not None:
         config.p0 = args.p0
+    if args.pi0 is not None:
+        config.pi0 = args.pi0
     if args.batch_size is not None:
         config.batch_size = args.batch_size
     if args.nni_max_iters is not None:

@@ -89,7 +89,7 @@ def run_em(sample, input_root, output_root, config):
         init_alpha=config.alpha_init,
         init_beta=config.beta_init,
         p0=config.p0,
-        pi0=0.0,
+        pi0=config.pi0,
         p1_fp_mode="one_over_c",
         max_iter=config.em_max_iter,
         tol=1e-4,
