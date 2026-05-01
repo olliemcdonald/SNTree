@@ -11,7 +11,7 @@ def now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def run_pipeline(sample, input_root, output_root, config):
+def run_pipeline(sample, output_root, config, input_paths):
 
     print(f"[{now()}] =======================================")
     print(f"[{now()}] Starting full SNTree pipeline for {sample}")
@@ -25,7 +25,7 @@ def run_pipeline(sample, input_root, output_root, config):
     print(f"[{now()}] --- Stage 0: Tree Preprocessing ---")
     t0 = time.time()
 
-    run_preprocess(sample, input_root, output_root)
+    run_preprocess(sample, output_root, input_paths)
 
     print(f"[{now()}] Preprocessing complete "
           f"(runtime={time.time() - t0:.2f} sec)")
@@ -36,7 +36,7 @@ def run_pipeline(sample, input_root, output_root, config):
     print(f"[{now()}] --- Stage 1: EM Estimation ---")
     t0 = time.time()
 
-    em_results = run_em(sample, input_root, output_root, config)
+    em_results = run_em(sample, output_root, config, input_paths)
 
     print(f"[{now()}] EM stage complete "
           f"(runtime={time.time() - t0:.2f} sec)")
@@ -49,12 +49,12 @@ def run_pipeline(sample, input_root, output_root, config):
 
     refine_results = run_refine(
         sample,
-        input_root,
         output_root,
         placements=em_results["placements"],
         alpha=em_results["alpha"],
         beta=em_results["beta"],
-        config=config
+        config=config,
+        input_paths=input_paths,
     )
 
     print(f"[{now()}] Refinement stage complete "

@@ -16,12 +16,12 @@ def now():
 
 def run_refine(
     sample,
-    input_root,
     output_root,
     placements,
     alpha,
     beta,
-    config
+    config,
+    input_paths,
 ):
 
     sample_base = os.path.join(output_root, sample, "sntree")
@@ -31,26 +31,22 @@ def run_refine(
     print(f"[{now()}] Refinement stage started for sample {sample}")
     t0 = time.time()
 
-    # ---- Paths ----
-    tree_path = os.path.join(sample_base, "tree_preprocessed.new")
-    sample_map_file = f"{input_root}/{sample}/chisel/{sample}.info.tsv"
-    cna_file = f"{input_root}/{sample}/medicc2/{sample}_final_cn_profiles.tsv"
-    cna_distance_file = f"{input_root}/{sample}/medicc2/{sample}_pairwise_distances.tsv"
-    vcf_path = f"{input_root}/{sample}/snv/consensus_singlecell_counts.vcf.gz"
-
     # ---- Load preprocessed tree ----
     print(f"[{now()}] Loading preprocessed CNA tree...")
-    if not os.path.exists(tree_path):
+    if not os.path.exists(input_paths.preprocessed_tree):
         raise RuntimeError(
-            f"Preprocessed tree not found at {tree_path}. "
+            f"Preprocessed tree not found at {input_paths.preprocessed_tree}. "
             "Run 'sntree preprocess' first."
         )
 
-    tree = read_preprocessed_tree(tree_path)
+    tree = read_preprocessed_tree(input_paths.preprocessed_tree)
 
     # ---- Load CNA ----
     print(f"[{now()}] Loading CNA profiles...")
-    sample_mapping, cna_profiles = import_cna_data(sample_map_file, cna_file)
+    sample_mapping, cna_profiles = import_cna_data(
+        input_paths.sample_mapping,
+        input_paths.cna_profiles,
+    )
 
     cna_idx, _ = cna_lookups(cna_profiles)
     cna_profiles = add_cna_bins(cna_profiles, cna_idx)
@@ -62,8 +58,8 @@ def run_refine(
     # ---- SNV index ----
     print(f"[{now()}] Building SNV index...")
     snv_index = build_snv_index(
-        vcf_path,
-        normal_name=None,
+        input_paths.vcf,
+        normal_name=input_paths.normal_name,
         name_map=barcode_to_cell,
     )
 
@@ -74,10 +70,11 @@ def run_refine(
         snv_assignments=placements,
         cna_profiles=cna_profiles,
         sample_mapping=sample_mapping,
-        cna_distance_tsv=cna_distance_file,
-        vcf_path=vcf_path,
+        cna_distance_tsv=input_paths.cna_distances,
+        vcf_path=input_paths.vcf,
         snv_index=snv_index,
         output_dir=sample_out,
+        normal_name=input_paths.normal_name,
         alpha=alpha,
         beta=beta,
         p0=config.p0,

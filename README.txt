@@ -101,10 +101,23 @@ You may override default configuration values:
         --beta-init 0.001 \
         --p0 0.001 \
         --batch-size 512 \
-        --max-iters 100 \
+        --nni-max-iters 100 \
         --em-max-iters 50
 
 These override the defaults in Config.
+
+You may also override individual input files. Explicit file paths take
+precedence over paths derived from <input_root>/<sample>:
+
+    sntree pipeline C2 /input /output \
+        --medicc-tree /path/to/C2_final_tree.new \
+        --cna-profiles /path/to/C2_final_cn_profiles.tsv \
+        --cna-distances /path/to/C2_pairwise_distances.tsv \
+        --sample-mapping /path/to/C2.info.tsv \
+        --vcf /path/to/consensus_singlecell_counts.vcf.gz
+
+If all required input files are provided explicitly, input_root can be any
+placeholder directory. The sample argument is still used for output naming.
 
 
 ------------------------------------------------------------

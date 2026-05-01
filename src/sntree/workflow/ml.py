@@ -17,7 +17,7 @@ def now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def run_ml(sample, input_root, output_root, config):
+def run_ml(sample, output_root, config, input_paths):
 
     sample_base = os.path.join(output_root, sample, "sntree")
     sample_out = os.path.join(sample_base, "ml")
@@ -26,35 +26,31 @@ def run_ml(sample, input_root, output_root, config):
     print(f"[{now()}] ML stage started for sample {sample}")
     t0 = time.time()
 
-    # ---- Paths ----
-    tree_path = os.path.join(sample_base, "tree_preprocessed.new")
-    sample_map_file = f"{input_root}/{sample}/chisel/{sample}.info.tsv"
-    cna_file = f"{input_root}/{sample}/medicc2/{sample}_final_cn_profiles.tsv"
-    vcf_path = f"{input_root}/{sample}/snv/consensus_singlecell_counts.vcf.gz"
-    normal_name = f"{input_root}/{sample}/normal_cells/{sample}_normal_markdup.bam"
-
     # ---- Tree ----
     print(f"[{now()}] Loading preprocessed CNA tree...")
-    if not os.path.exists(tree_path):
+    if not os.path.exists(input_paths.preprocessed_tree):
         raise RuntimeError(
-            f"Preprocessed tree not found at {tree_path}. "
+            f"Preprocessed tree not found at {input_paths.preprocessed_tree}. "
             "Run 'sntree preprocess' first."
         )
 
-    t = read_preprocessed_tree(tree_path)
+    t = read_preprocessed_tree(input_paths.preprocessed_tree)
 
     # ---- CNA ----
     print(f"[{now()}] Loading CNA profiles...")
-    sample_mapping, cna_profiles = import_cna_data(sample_map_file, cna_file)
+    sample_mapping, cna_profiles = import_cna_data(
+        input_paths.sample_mapping,
+        input_paths.cna_profiles,
+    )
     cna_idx, _ = cna_lookups(cna_profiles)
     cna_profiles = add_cna_bins(cna_profiles, cna_idx)
     t = add_cna(t, sample_mapping, cna_profiles)
 
     # ---- SNV ----
     print(f"[{now()}] Loading SNVs...")
-    vcf_list = VCF(vcf_path)
+    vcf_list = VCF(input_paths.vcf)
     variant_ids, ref_df, alt_df, normal_ref, normal_alt = vcf_list_to_tables(
-        vcf_list, min_cells=2, normal_name=normal_name
+        vcf_list, min_cells=2, normal_name=input_paths.normal_name
     )
 
     snv_df, snv_dict, ref_df, alt_df, normal_ref, normal_alt = snv_lookups(

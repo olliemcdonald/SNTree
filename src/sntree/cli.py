@@ -82,6 +82,34 @@ def main():
             type=int,
             help="Maximum EM iterations"
         )
+        sp.add_argument(
+            "--medicc-tree",
+            help="Override MEDICC2 Newick tree path"
+        )
+        sp.add_argument(
+            "--cna-profiles",
+            help="Override MEDICC2 final CN profiles TSV path"
+        )
+        sp.add_argument(
+            "--cna-distances",
+            help="Override MEDICC2 pairwise distances TSV path"
+        )
+        sp.add_argument(
+            "--sample-mapping",
+            help="Override CHISEL sample mapping/info TSV path"
+        )
+        sp.add_argument(
+            "--vcf",
+            help="Override SNV VCF path"
+        )
+        sp.add_argument(
+            "--normal-name",
+            help="Override normal sample name used when reading the VCF"
+        )
+        sp.add_argument(
+            "--preprocessed-tree",
+            help="Override preprocessed tree path"
+        )
 
     # ---------------------------------------------------------
     # preprocess
@@ -156,21 +184,24 @@ def main():
     if args.em_max_iters is not None:
         config.em_max_iter = args.em_max_iters
 
+    from sntree.io.input_paths import resolve_input_paths
+    input_paths = resolve_input_paths(args, args.command)
+
     # ---------------------------------------------------------
     # Command dispatch
     # ---------------------------------------------------------
 
     if args.command == "preprocess":
         from sntree.workflow.preprocess_tree import run_preprocess
-        run_preprocess(args.sample, args.input_root, args.output_root)
+        run_preprocess(args.sample, args.output_root, input_paths)
 
     elif args.command == "ml":
         from sntree.workflow.ml import run_ml
-        run_ml(args.sample, args.input_root, args.output_root, config)
+        run_ml(args.sample, args.output_root, config, input_paths)
 
     elif args.command == "em":
         from sntree.workflow.em import run_em
-        run_em(args.sample, args.input_root, args.output_root, config)
+        run_em(args.sample, args.output_root, config, input_paths)
 
     elif args.command == "refine":
         from sntree.workflow.refine import run_refine
@@ -211,14 +242,14 @@ def main():
 
         run_refine(
             args.sample,
-            args.input_root,
             args.output_root,
             placements,
             alpha,
             beta,
-            config
+            config,
+            input_paths,
         )
 
     elif args.command == "pipeline":
         from sntree.workflow.pipeline import run_pipeline
-        run_pipeline(args.sample, args.input_root, args.output_root, config)
+        run_pipeline(args.sample, args.output_root, config, input_paths)

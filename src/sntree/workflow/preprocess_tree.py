@@ -90,7 +90,7 @@ def clean_identical_clades(
 
     return tree
 
-def run_preprocess(sample, input_root, output_root):
+def run_preprocess(sample, output_root, input_paths):
 
     print(f"[{now()}] Preprocess stage started for sample {sample}")
     t0 = time.time()
@@ -98,23 +98,22 @@ def run_preprocess(sample, input_root, output_root):
     sample_out = os.path.join(output_root, sample, "sntree")
     os.makedirs(sample_out, exist_ok=True)
 
-    # ---- Paths ----
-    medicc_tree_path = f"{input_root}/{sample}/medicc2/{sample}_final_tree.new"
-    cna_distance_path = f"{input_root}/{sample}/medicc2/{sample}_pairwise_distances.tsv"
-
     # ---- Load and normalize MEDICC2 tree ----
     print(f"[{now()}] Loading raw MEDICC2 tree...")
-    tree = read_raw_medicc_tree(medicc_tree_path)
+    tree = read_raw_medicc_tree(input_paths.medicc_tree)
 
     # ---- Clean CN-identical cousin structure ----
     print(f"[{now()}] Cleaning CN-identical clades...")
-    tree = clean_identical_clades(tree, cna_distance_path)
+    tree = clean_identical_clades(tree, input_paths.cna_distances)
 
     # Ensure root naming persists
     tree.name = "root"
 
     # ---- Write preprocessed tree ----
-    output_path = os.path.join(sample_out, "tree_preprocessed.new")
+    output_path = input_paths.preprocessed_tree
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(output_path, "w") as f:
         f.write(tree.write(parser=1).strip() + "\n")
