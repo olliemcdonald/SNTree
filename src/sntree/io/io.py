@@ -7,7 +7,6 @@ def save_state(
     newick,
     sample_mapping,
     cna_profiles,
-    cna_events,
     ref_df,
     alt_df,
     snv_df,
@@ -24,7 +23,6 @@ def save_state(
         "newick": newick,
         "sample_mapping": sample_mapping,
         "cna_profiles": cna_profiles,
-        "cna_events": cna_events,
         "ref_df": ref_df,
         "alt_df": alt_df,
         "snv_df": snv_df,
@@ -42,7 +40,7 @@ def load_state(infile):
     """
     Load gzipped pickle created by save_state() and rebuild the raw tree.
     Returns:
-        t (ETE Tree), sample_mapping, cna_profiles, cna_events,
+        t (ETE Tree), sample_mapping, cna_profiles,
         ref_df, alt_df, snv_df, transitions,
         placements_maxlik, predicted_scsnv
     """
@@ -62,7 +60,6 @@ def load_state(infile):
         t,
         state["sample_mapping"],
         state["cna_profiles"],
-        state["cna_events"],
         state["ref_df"],
         state["alt_df"],
         state["snv_df"],
@@ -83,7 +80,6 @@ from sntree.io.io_preprocess import build_all
     t,                # ETE tree rebuilt from Newick
     sample_mapping,
     cna_profiles,
-    cna_events,
     ref_df,
     alt_df,
     snv_df,
@@ -93,7 +89,7 @@ from sntree.io.io_preprocess import build_all
 ) = load_state("/path/to/sample/state.pkl.gz")
 
 # Rebuild annotated tree and derived structures
-t = cna.add_cna(t, sample_mapping, cna_profiles, cna_events)
+t = cna.add_cna(t, sample_mapping, cna_profiles)
 t = snv.add_snvs(t, ref_df, alt_df)
 
 cna_tree, snv_dataset, transitions2 = build_all(

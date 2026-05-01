@@ -30,7 +30,6 @@ def run_ml(sample, input_root, output_root, config):
     tree_path = os.path.join(sample_base, "tree_preprocessed.new")
     sample_map_file = f"{input_root}/{sample}/chisel/{sample}.info.tsv"
     cna_file = f"{input_root}/{sample}/medicc2/{sample}_final_cn_profiles.tsv"
-    cna_events_file = f"{input_root}/{sample}/medicc2/{sample}_copynumber_events_df.tsv"
     vcf_path = f"{input_root}/{sample}/snv/consensus_singlecell_counts.vcf.gz"
     normal_name = f"{input_root}/{sample}/normal_cells/{sample}_normal_markdup.bam"
 
@@ -46,9 +45,7 @@ def run_ml(sample, input_root, output_root, config):
 
     # ---- CNA ----
     print(f"[{now()}] Loading CNA profiles...")
-    sample_mapping, cna_profiles, cna_events = import_cna_data(
-        sample_map_file, cna_file, cna_events_file
-    )
+    sample_mapping, cna_profiles = import_cna_data(sample_map_file, cna_file)
     cna_idx, _ = cna_lookups(cna_profiles)
     cna_profiles = add_cna_bins(cna_profiles, cna_idx)
     t = add_cna(t, sample_mapping, cna_profiles)

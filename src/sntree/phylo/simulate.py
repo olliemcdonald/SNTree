@@ -360,7 +360,7 @@ def simulate_dataset(num_cells=100,
         n.props['cell_id'] = n.name
   
     # --- simulate CNA ---
-    cna_events, cna_profiles_sim = simulate_cna_profiles(
+    _events, cna_profiles_sim = simulate_cna_profiles(
         tree, n_segments, p_gain=p_gain, p_loss=p_loss,
         wgd_prob=wgd_prob, wgd_once=wgd_once, allow_multi_step=allow_multi_step,
         gain_max_step=gain_max_step, loss_max_step=loss_max_step,
@@ -394,5 +394,4 @@ def simulate_dataset(num_cells=100,
         snv_df.loc[snv_df.snv == snv_id, "true_origin"] = origin_node
 
     return tree, cna_profiles_sim, snv_df, ref_df, alt_df
-
 

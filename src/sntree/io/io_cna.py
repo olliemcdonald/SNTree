@@ -1,24 +1,20 @@
 import pandas as pd
 
 def import_cna_data(mapping_file,
-                    cna_file,
-                    cna_events_file=None):
+                    cna_file):
   # Takes file paths from chisel and medicc2 outputs
   # mapping_file: ex.info.tsv from chisel
   # cna_file: ex_final_cn_profiles.tsv from medicc2
-  # cna_events_file: ex_copynumber_events_df.tsv from medicc2
 
   sample_mapping = pd.read_csv(mapping_file, sep = "\t", dtype = str)
   cna_profiles = pd.read_csv(cna_file, sep = "\t")
-  if cna_events_file is not None:
-    cna_events = pd.read_csv(cna_events_file, sep="\t")
 
   # Create CHISEL Barcode to Cell Name Mapping -----------------------------------------------
   sample_mapping = sample_mapping.rename(columns={sample_mapping.columns[0]: sample_mapping.columns[0].lstrip("#")})
   # Keep just what we need
   sample_mapping = sample_mapping[["CELL", "BARCODE"]]
 
-  return sample_mapping, cna_profiles, cna_events
+  return sample_mapping, cna_profiles
 
 def barcode_cell_maps(sample_mapping):
   # Dicts to map barcode ids to cell names and vice versa
@@ -56,8 +52,8 @@ def add_cna_bins(cna_profiles, cna_idx):
 
 
 def add_cna(tree, sample_mapping, cna_profiles):
-  
-  # takes mapping between cell names and cell barcodes, CNA text file, and events file
+
+  # takes mapping between cell names and cell barcodes, and CNA profile table
   # and places them on the tree
 
   # Add Root CN to the tree as Diploid (for now)  -------------------------------
@@ -81,10 +77,6 @@ def add_cna(tree, sample_mapping, cna_profiles):
     cna_dict = cna_profile.set_index('idx').to_dict(orient='index')
 
     n.add_prop("CN_profile", cna_dict)
-
-    
-    #n.add_prop("CN_profile", cna_profiles[cna_profiles['sample_id'] == n.name])
-    #n.add_prop("CN_events", cna_events[cna_events['sample_id'] == n.name])
 
   # CN parent-child difference --------------------------------------------------
   # Manually get the difference between the parent total CN and the child total CN as the edge event

@@ -115,7 +115,6 @@ Expected Input Directory Structure
     medicc2/
         <sample>_final_tree.new
         <sample>_final_cn_profiles.tsv
-        <sample>_copynumber_events_df.tsv
         <sample>_pairwise_distances.tsv
     chisel/
         <sample>.info.tsv
