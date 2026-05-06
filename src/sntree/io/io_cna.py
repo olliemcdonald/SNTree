@@ -50,15 +50,33 @@ def add_cna_bins(cna_profiles, cna_idx):
   cna_profiles=cna_profiles.merge(cna_idx, how='left')
   return cna_profiles
 
+def ensure_cn_tot(cna_profiles):
+  cna_profiles = cna_profiles.copy()
+
+  if 'cn_tot' in cna_profiles.columns:
+    return cna_profiles
+
+  if 'cn_total' in cna_profiles.columns:
+    cna_profiles['cn_tot'] = cna_profiles['cn_total']
+    return cna_profiles
+
+  if {'cn_a', 'cn_b'}.issubset(cna_profiles.columns):
+    cna_profiles['cn_tot'] = cna_profiles['cn_a'] + cna_profiles['cn_b']
+    return cna_profiles
+
+  raise ValueError(
+    "CNA profiles must contain cn_tot, cn_total, or both cn_a and cn_b"
+  )
+
 
 def add_cna(tree, sample_mapping, cna_profiles):
 
   # takes mapping between cell names and cell barcodes, and CNA profile table
   # and places them on the tree
+  cna_profiles = ensure_cn_tot(cna_profiles)
 
   # Add Root CN to the tree as Diploid (for now)  -------------------------------
-  root_profile=cna_profiles.loc[cna_profiles['sample_id'] == "diploid", ['idx', 'cn_a', 'cn_b']].copy()
-  root_profile.insert(loc=1, column='cn_tot', value=root_profile.cn_a + root_profile.cn_b)
+  root_profile=cna_profiles.loc[cna_profiles['sample_id'] == "diploid", ['idx', 'cn_tot']].copy()
   root_dict = root_profile.set_index('idx').to_dict(orient='index')
   tree.add_prop("CN_profile", root_dict) 
 
@@ -72,8 +90,7 @@ def add_cna(tree, sample_mapping, cna_profiles):
 
     n.add_prop("cell_id", barcode_to_cell.get(n.name))
 
-    cna_profile = cna_profiles.loc[cna_profiles['sample_id'] == n.name, ['idx', 'cn_a', 'cn_b']].copy()
-    cna_profile.insert(1, 'cn_tot', value=cna_profile['cn_a'] + cna_profile['cn_b'])
+    cna_profile = cna_profiles.loc[cna_profiles['sample_id'] == n.name, ['idx', 'cn_tot']].copy()
     cna_dict = cna_profile.set_index('idx').to_dict(orient='index')
 
     n.add_prop("CN_profile", cna_dict)
