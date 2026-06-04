@@ -67,4 +67,5 @@ Thumbs.db # Windows specific
 # Other docs, etc
 *.docx
 */logs/
+sandbox/
 .ipynb_checkpoints
