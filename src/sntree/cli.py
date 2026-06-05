@@ -83,6 +83,28 @@ def main():
             help="Maximum EM iterations"
         )
         sp.add_argument(
+            "--no-soft-em",
+            action="store_true",
+            default=False,
+            help="Skip soft branch-proportion EM after hard EM"
+        )
+        sp.add_argument(
+            "--soft-em-max-iters",
+            type=int,
+            help="Maximum iterations for soft branch-proportion EM"
+        )
+        sp.add_argument(
+            "--soft-em-joint",
+            action="store_true",
+            default=False,
+            help="Jointly update alpha/beta during soft EM (default: fixed)"
+        )
+        sp.add_argument(
+            "--alpha-dir",
+            type=float,
+            help="Dirichlet concentration on branch proportions (default 1.0)"
+        )
+        sp.add_argument(
             "--medicc-tree",
             help="Override MEDICC2 Newick tree path"
         )
@@ -183,6 +205,14 @@ def main():
         config.nni_max_iters = args.nni_max_iters
     if args.em_max_iters is not None:
         config.em_max_iter = args.em_max_iters
+    if args.no_soft_em:
+        config.run_soft_em = False
+    if args.soft_em_max_iters is not None:
+        config.soft_em_max_iter = args.soft_em_max_iters
+    if args.soft_em_joint:
+        config.soft_em_joint = True
+    if args.alpha_dir is not None:
+        config.alpha_dir = args.alpha_dir
 
     from sntree.io.input_paths import resolve_input_paths
     input_paths = resolve_input_paths(args, args.command)

@@ -3,6 +3,7 @@
 import os
 import time
 import pickle
+import numpy as np
 import pandas as pd
 from cyvcf2 import VCF
 
@@ -11,6 +12,7 @@ from sntree.io.io_cna import import_cna_data, add_cna, cna_lookups, add_cna_bins
 from sntree.io.io_snv import vcf_list_to_tables, snv_lookups
 from sntree.io.io_preprocess import build_all
 from sntree.likelihood.em_alpha_beta import em_alpha_beta
+from sntree.likelihood.em_soft import em_soft
 
 
 def now():
@@ -144,8 +146,82 @@ def run_em(sample, output_root, config, input_paths):
 
     print(f"[{now()}] EM stage finished successfully.")
 
-    return {
+    result = {
         "placements": placements_named,
         "alpha": alpha,
-        "beta": beta
+        "beta": beta,
+    }
+
+    # ---- Soft branch-proportion EM ----
+    if config.run_soft_em:
+        result.update(_run_soft_em(
+            sample_out, cna_tree, snv_dataset, transitions,
+            alpha, beta, config,
+        ))
+
+    return result
+
+
+def _run_soft_em(sample_out, cna_tree, snv_dataset, transitions, alpha, beta, config):
+    """
+    Phase 2: soft EM over candidate sites to estimate relative branch
+    mutation burdens pi_b (sntree_extended.tex §4).
+
+    Uses alpha/beta from the hard EM as fixed starting values (joint=False)
+    or jointly updates them (joint=True via config.soft_em_joint).
+    """
+    print(f"[{now()}] --- Soft branch-proportion EM ---")
+    t0 = time.time()
+
+    alpha_soft, beta_soft, pi_b, pi_0, soft_history = em_soft(
+        cna_tree,
+        snv_dataset,
+        transitions,
+        init_alpha=alpha,
+        init_beta=beta,
+        init_pi0=config.pi0,
+        alpha_dir=config.alpha_dir,
+        p0=config.p0,
+        p1_fp_mode="one_over_c",
+        max_iter=config.soft_em_max_iter,
+        tol=1e-4,
+        joint=config.soft_em_joint,
+        batch_size=config.batch_size,
+        print_progress=True,
+    )
+
+    print(f"[{now()}] Soft EM complete (runtime={time.time() - t0:.2f} sec)")
+
+    # ---- Map node indices → names and build output table ----
+    node_names = [cna_tree.idx_to_ete[i].name for i in range(cna_tree.n_nodes)]
+
+    pi_df = pd.DataFrame({
+        "node":     node_names,
+        "pi_b":     pi_b,
+        "is_leaf":  cna_tree.is_leaf,
+    }).sort_values("pi_b", ascending=False)
+    pi_df.index.name = "node_idx"
+
+    pi_df.to_csv(
+        os.path.join(sample_out, "branch_proportions.tsv"),
+        sep="\t",
+        float_format="%.6f",
+    )
+    print(f"[{now()}] Branch proportions written to branch_proportions.tsv")
+
+    # ---- Save full soft-EM binary results ----
+    with open(os.path.join(sample_out, "soft_em_results.pkl"), "wb") as f:
+        pickle.dump({
+            "pi_b":         pi_b,
+            "pi_0":         pi_0,
+            "node_names":   node_names,
+            "alpha":        alpha_soft,
+            "beta":         beta_soft,
+            "history":      soft_history,
+        }, f)
+
+    return {
+        "pi_b":       pi_b,
+        "pi_0":       pi_0,
+        "node_names": node_names,
     }
