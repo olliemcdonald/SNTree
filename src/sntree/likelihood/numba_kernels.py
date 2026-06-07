@@ -42,7 +42,7 @@ def xlog1py(a, b):
 #   2) vector k,n and vector p
 # -------------------------------------------------------------------------
 
-@njit(parallel=False)
+@njit(parallel=True)
 def _logpmf_binom_scalar(k, n, p):
     """
     Compute binomial logpmf for vector k,n with scalar p.
@@ -60,7 +60,7 @@ def _logpmf_binom_scalar(k, n, p):
     return out
 
 
-@njit(parallel=False)
+@njit(parallel=True)
 def _logpmf_binom_vec(k, n, p):
     """
     Fully elementwise binomial logpmf for vector k, n, p:
@@ -110,7 +110,7 @@ def _logsumexp2_scalar(a, b):
     return m + log(exp(a - m) + exp(b - m))
 
 
-@njit(parallel=False)
+@njit(parallel=True)
 def _logsumexp2_matrix(a, b):
     B, L = a.shape
     out = np.empty((B, L), np.float64)
@@ -152,7 +152,7 @@ def logsumexp2_matrix(a, b):
     return _logsumexp2_matrix(a_arr, b_arr)
 
 
-@njit(parallel=False)
+@njit(parallel=True)
 def _logsumexp_axis2(mat):
     B, A_p, A_c = mat.shape
     out = np.empty((B, A_p), np.float64)
@@ -161,7 +161,7 @@ def _logsumexp_axis2(mat):
             m = -np.inf
             all_inf = True
 
-            for k in prange(A_c):
+            for k in range(A_c):  # must be range, not prange — nested prange unsupported
                 if mat[i,j,k] != -np.inf:
                     all_inf = False
                 if mat[i,j,k] > m:
