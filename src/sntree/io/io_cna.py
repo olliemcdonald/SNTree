@@ -95,6 +95,17 @@ def add_cna(tree, sample_mapping, cna_profiles):
 
     n.add_prop("CN_profile", cna_dict)
 
+  # Impute CN profiles for nodes absent from the MEDICC2 profiles file.
+  # This covers new internal nodes created by NNI refinement: those nodes live
+  # inside CNA-identical clades by construction, so their CN profile is
+  # identical to their parent's.  Preorder ensures the parent is always fixed
+  # before its children.
+  for n in tree.traverse("preorder"):
+    if n.is_root:
+      continue
+    if not n.get_prop("CN_profile"):
+      n.add_prop("CN_profile", dict(n.parent.get_prop("CN_profile")))
+
   # CN parent-child difference --------------------------------------------------
   # Manually get the difference between the parent total CN and the child total CN as the edge event
   for n in tree.traverse():
