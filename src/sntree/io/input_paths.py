@@ -18,6 +18,7 @@ REQUIRED_BY_COMMAND = {
     "preprocess": ("medicc_tree", "cna_distances"),
     "ml": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
     "em": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
+    "soft-em": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
     "refine": (
         "preprocessed_tree",
         "sample_mapping",

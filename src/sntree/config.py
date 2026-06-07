@@ -9,8 +9,9 @@ class Config:
     batch_size: int = 1024
     nni_max_iters: int = 50
     em_max_iter: int = 30
-    # Soft branch-proportion EM (sntree_extended)
-    run_soft_em: bool = True
+    # Soft branch-proportion EM
     soft_em_max_iter: int = 50
-    soft_em_joint: bool = False  # jointly update alpha/beta in soft pass
     alpha_dir: float = 1.0       # Dirichlet concentration on pi_b
+    # Pipeline control
+    run_hard_em: bool = False    # opt-in: run hard EM before soft EM pass 1
+    soft_em_pass2: bool = True   # run a second soft EM pass after refinement

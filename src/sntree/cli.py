@@ -14,11 +14,17 @@ def main():
         description=(
             "SNTree: Phylogeny-aware single-cell SNV inference "
             "under copy number variation.\n\n"
-            "Typical usage:\n"
+            "Typical usage (soft EM, default):\n"
+            "  sntree pipeline SAMPLE /input /output\n\n"
+            "Staged workflow:\n"
             "  sntree preprocess SAMPLE /input /output\n"
-            "  sntree em SAMPLE /input /output\n"
-            "  sntree refine SAMPLE /input /output\n"
-            "  sntree pipeline SAMPLE /input /output\n"
+            "  sntree soft-em   SAMPLE /input /output\n"
+            "  sntree refine    SAMPLE /input /output\n"
+            "  sntree soft-em   SAMPLE /input /output \\\n"
+            "      --refined-tree /output/SAMPLE/sntree/refine/refined_full_tree.new \\\n"
+            "      --warm-start-pkl /output/SAMPLE/sntree/soft_em/soft_em_results.pkl\n\n"
+            "With hard EM:\n"
+            "  sntree pipeline SAMPLE /input /output --hard-em\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -26,200 +32,158 @@ def main():
     subparsers = parser.add_subparsers(
         dest="command",
         required=True,
-        help="Available commands"
+        help="Available commands",
     )
 
-    # ---------------------------------------------------------
-    # Common arguments helper
-    # ---------------------------------------------------------
+    # ── Common path / tuning arguments ────────────────────────────────────
 
     def add_common_args(sp):
-        sp.add_argument(
-            "sample",
-            help="Sample name (corresponding to folder under input_root)"
-        )
-        sp.add_argument(
-            "input_root",
-            help="Root directory containing sample input data"
-        )
-        sp.add_argument(
-            "output_root",
-            help="Root directory where outputs will be written"
-        )
+        sp.add_argument("sample",      help="Sample name")
+        sp.add_argument("input_root",  help="Root directory containing sample input data")
+        sp.add_argument("output_root", help="Root directory where outputs will be written")
 
-        sp.add_argument(
-            "--alpha-init",
-            type=float,
-            help="Initial alpha value (false positive rate)"
-        )
-        sp.add_argument(
-            "--beta-init",
-            type=float,
-            help="Initial beta value (false negative/dropout rate)"
-        )
-        sp.add_argument(
-            "--p0",
-            type=float,
-            help="Sequencing error baseline probability"
-        )
-        sp.add_argument(
-            "--pi0",
-            type=float,
-            help="Prior probability of a null SNV placement"
-        )
-        sp.add_argument(
-            "--batch-size",
-            type=int,
-            help="Batch size for likelihood computation"
-        )
-        sp.add_argument(
-            "--nni-max-iters",
-            type=int,
-            help="Maximum NNI iterations for subtree refinement"
-        )
-        sp.add_argument(
-            "--em-max-iters",
-            type=int,
-            help="Maximum EM iterations"
-        )
-        sp.add_argument(
-            "--no-soft-em",
-            action="store_true",
-            default=False,
-            help="Skip soft branch-proportion EM after hard EM"
-        )
-        sp.add_argument(
-            "--soft-em-max-iters",
-            type=int,
-            help="Maximum iterations for soft branch-proportion EM"
-        )
-        sp.add_argument(
-            "--soft-em-joint",
-            action="store_true",
-            default=False,
-            help="Jointly update alpha/beta during soft EM (default: fixed)"
-        )
-        sp.add_argument(
-            "--alpha-dir",
-            type=float,
-            help="Dirichlet concentration on branch proportions (default 1.0)"
-        )
-        sp.add_argument(
-            "--medicc-tree",
-            help="Override MEDICC2 Newick tree path"
-        )
-        sp.add_argument(
-            "--cna-profiles",
-            help="Override MEDICC2 final CN profiles TSV path"
-        )
-        sp.add_argument(
-            "--cna-distances",
-            help="Override MEDICC2 pairwise distances TSV path"
-        )
-        sp.add_argument(
-            "--sample-mapping",
-            help="Override CHISEL sample mapping/info TSV path"
-        )
-        sp.add_argument(
-            "--vcf",
-            help="Override SNV VCF path"
-        )
-        sp.add_argument(
-            "--normal-name",
-            help="Override normal sample name used when reading the VCF"
-        )
-        sp.add_argument(
-            "--preprocessed-tree",
-            help="Override preprocessed tree path"
-        )
+        g = sp.add_argument_group("input path overrides")
+        g.add_argument("--medicc-tree",       help="MEDICC2 Newick tree path")
+        g.add_argument("--cna-profiles",      help="MEDICC2 final CN profiles TSV")
+        g.add_argument("--cna-distances",     help="MEDICC2 pairwise distances TSV")
+        g.add_argument("--sample-mapping",    help="CHISEL sample info TSV")
+        g.add_argument("--vcf",               help="SNV VCF path")
+        g.add_argument("--normal-name",       help="Normal sample name in VCF")
+        g.add_argument("--preprocessed-tree", help="Preprocessed tree path")
 
-    # ---------------------------------------------------------
-    # preprocess
-    # ---------------------------------------------------------
+        g2 = sp.add_argument_group("EM tuning")
+        g2.add_argument("--alpha-init",        type=float, help="Initial alpha (FP rate)")
+        g2.add_argument("--beta-init",         type=float, help="Initial beta (FN rate)")
+        g2.add_argument("--p0",                type=float, help="Background error probability")
+        g2.add_argument("--pi0",               type=float, help="Prior null-placement probability")
+        g2.add_argument("--batch-size",        type=int,   help="Batch size for likelihood DP")
+        g2.add_argument("--nni-max-iters",     type=int,   help="Max NNI iterations")
+        g2.add_argument("--em-max-iters",      type=int,   help="Max hard EM iterations")
+        g2.add_argument("--soft-em-max-iters", type=int,   help="Max soft EM iterations (default 50)")
+        g2.add_argument("--alpha-dir",         type=float,
+                        help="Dirichlet concentration on pi_b (default 1.0)")
 
+    # ── preprocess ────────────────────────────────────────────────────────
     sp_pre = subparsers.add_parser(
         "preprocess",
-        help="Preprocess MEDICC2 tree (normalize + split CN-identical clades)"
+        help="Preprocess MEDICC2 tree (normalise + split CNA-identical clades)",
     )
     add_common_args(sp_pre)
 
-    # ---------------------------------------------------------
-    # ml
-    # ---------------------------------------------------------
-
+    # ── ml ────────────────────────────────────────────────────────────────
     sp_ml = subparsers.add_parser(
         "ml",
-        help="Run CNA-aware maximum likelihood SNV placement"
+        help="CNA-aware maximum likelihood SNV placement",
     )
     add_common_args(sp_ml)
 
-    # ---------------------------------------------------------
-    # em
-    # ---------------------------------------------------------
-
+    # ── em ────────────────────────────────────────────────────────────────
     sp_em = subparsers.add_parser(
         "em",
-        help="Run EM estimation of alpha and beta parameters"
+        help="Hard EM: estimate alpha/beta and produce MAP SNV placements",
     )
     add_common_args(sp_em)
 
-    # ---------------------------------------------------------
-    # refine
-    # ---------------------------------------------------------
+    # ── soft-em ───────────────────────────────────────────────────────────
+    sp_sem = subparsers.add_parser(
+        "soft-em",
+        help=(
+            "Soft branch-proportion EM: infer relative mutation burdens pi_b.\n"
+            "Run once on the MEDICC2 tree, then again after 'sntree refine'\n"
+            "using --refined-tree and --warm-start-pkl for a warm-started pass."
+        ),
+    )
+    add_common_args(sp_sem)
+    sp_sem.add_argument(
+        "--refined-tree",
+        default=None,
+        help="Use this Newick tree instead of the preprocessed MEDICC2 tree.\n"
+             "Typically the output of 'sntree refine' "
+             "(.../sntree/refine/refined_full_tree.new).",
+    )
+    sp_sem.add_argument(
+        "--warm-start-pkl",
+        default=None,
+        help="Path to a previous soft_em_results.pkl.\n"
+             "pi_b and alpha/beta are loaded from it to warm-start this run.\n"
+             "Typically used for pass 2 after refinement.",
+    )
+    sp_sem.add_argument(
+        "--soft-em-joint",
+        action="store_true",
+        default=False,
+        help="Jointly update alpha/beta during soft EM\n"
+             "(default: auto — on when no hard EM results exist, off otherwise).",
+    )
+    sp_sem.add_argument(
+        "--output-subdir",
+        default=None,
+        help="Output subdirectory name under .../sntree/ (default: soft_em or soft_em_pass2).",
+    )
 
+    # ── refine ────────────────────────────────────────────────────────────
     sp_refine = subparsers.add_parser(
         "refine",
-        help="Refine CNA-identical subtrees using SNV likelihood"
+        help="Refine CNA-identical subtrees using SNV likelihoods (NNI)",
     )
     add_common_args(sp_refine)
 
-    # ---------------------------------------------------------
-    # pipeline
-    # ---------------------------------------------------------
-
+    # ── pipeline ──────────────────────────────────────────────────────────
     sp_pipeline = subparsers.add_parser(
         "pipeline",
-        help="Run full pipeline (preprocess → EM → subtree refinement)"
+        help=(
+            "Full pipeline.\n"
+            "Default: soft EM pass 1 → refine → soft EM pass 2 (warm start).\n"
+            "Use --hard-em to add a hard EM stage before the soft passes."
+        ),
     )
     add_common_args(sp_pipeline)
+    sp_pipeline.add_argument(
+        "--hard-em",
+        action="store_true",
+        default=False,
+        help="Run hard EM (alpha/beta estimation + MAP placements) before\n"
+             "the soft EM passes.  By default the soft EM estimates alpha/beta\n"
+             "jointly in pass 1.",
+    )
+    sp_pipeline.add_argument(
+        "--no-soft-em-pass2",
+        action="store_true",
+        default=False,
+        help="Skip the second soft EM after refinement.",
+    )
+    sp_pipeline.add_argument(
+        "--no-refine",
+        action="store_true",
+        default=False,
+        help="Skip refinement and pass 2 entirely (soft EM pass 1 only).",
+    )
 
     args = parser.parse_args()
 
+    # ── Build config ───────────────────────────────────────────────────────
     config = Config()
 
-    # ---------------------------------------------------------
-    # Apply CLI overrides
-    # ---------------------------------------------------------
+    if getattr(args, "alpha_init",        None) is not None: config.alpha_init        = args.alpha_init
+    if getattr(args, "beta_init",         None) is not None: config.beta_init         = args.beta_init
+    if getattr(args, "p0",                None) is not None: config.p0                = args.p0
+    if getattr(args, "pi0",               None) is not None: config.pi0               = args.pi0
+    if getattr(args, "batch_size",        None) is not None: config.batch_size        = args.batch_size
+    if getattr(args, "nni_max_iters",     None) is not None: config.nni_max_iters     = args.nni_max_iters
+    if getattr(args, "em_max_iters",      None) is not None: config.em_max_iter       = args.em_max_iters
+    if getattr(args, "soft_em_max_iters", None) is not None: config.soft_em_max_iter  = args.soft_em_max_iters
+    if getattr(args, "alpha_dir",         None) is not None: config.alpha_dir         = args.alpha_dir
 
-    if args.alpha_init is not None:
-        config.alpha_init = args.alpha_init
-    if args.beta_init is not None:
-        config.beta_init = args.beta_init
-    if args.p0 is not None:
-        config.p0 = args.p0
-    if args.pi0 is not None:
-        config.pi0 = args.pi0
-    if args.batch_size is not None:
-        config.batch_size = args.batch_size
-    if args.nni_max_iters is not None:
-        config.nni_max_iters = args.nni_max_iters
-    if args.em_max_iters is not None:
-        config.em_max_iter = args.em_max_iters
-    if args.no_soft_em:
-        config.run_soft_em = False
-    if args.soft_em_max_iters is not None:
-        config.soft_em_max_iter = args.soft_em_max_iters
-    if args.soft_em_joint:
-        config.soft_em_joint = True
-    if args.alpha_dir is not None:
-        config.alpha_dir = args.alpha_dir
+    # Pipeline-specific flags
+    if getattr(args, "hard_em",           False): config.run_hard_em   = True
+    if getattr(args, "no_soft_em_pass2",  False): config.soft_em_pass2 = False
+    if getattr(args, "no_refine",         False):
+        config.soft_em_pass2 = False   # no refine → no pass 2
 
     from sntree.io.input_paths import resolve_input_paths
     input_paths = resolve_input_paths(args, args.command)
 
-    # ---------------------------------------------------------
-    # Command dispatch
-    # ---------------------------------------------------------
+    # ── Dispatch ───────────────────────────────────────────────────────────
 
     if args.command == "preprocess":
         from sntree.workflow.preprocess_tree import run_preprocess
@@ -233,41 +197,59 @@ def main():
         from sntree.workflow.em import run_em
         run_em(args.sample, args.output_root, config, input_paths)
 
+    elif args.command == "soft-em":
+        from sntree.workflow.soft_em import run_soft_em
+
+        joint_override = args.soft_em_joint if args.soft_em_joint else None
+
+        # Infer default output subdir from whether a warm-start pkl is given
+        if args.output_subdir is not None:
+            subdir = args.output_subdir
+        elif args.warm_start_pkl is not None or args.refined_tree is not None:
+            subdir = "soft_em_pass2"
+        else:
+            subdir = "soft_em"
+
+        run_soft_em(
+            args.sample,
+            args.output_root,
+            config,
+            input_paths,
+            tree_path_override=args.refined_tree,
+            warm_start_pkl=args.warm_start_pkl,
+            output_subdir=subdir,
+            joint=joint_override,
+        )
+
     elif args.command == "refine":
         from sntree.workflow.refine import run_refine
 
-        sample_out = os.path.join(args.output_root, args.sample, "sntree")
+        sample_base = os.path.join(args.output_root, args.sample, "sntree")
 
-        em_path = os.path.join(sample_out, "em", "em_results.pkl")
-        ml_results_path = os.path.join(sample_out, "ml", "ml_results.pkl")
-        ml_legacy_path = os.path.join(sample_out, "ml", "placements_ml.pkl")
+        # Prefer soft EM pass 1 results; fall back to hard EM; then error
+        soft_pkl  = os.path.join(sample_base, "soft_em",  "soft_em_results.pkl")
+        soft_place = os.path.join(sample_base, "soft_em", "placements_soft.tsv")
+        em_pkl    = os.path.join(sample_base, "em",       "em_results.pkl")
 
-        if os.path.exists(em_path):
-            with open(em_path, "rb") as f:
-                em_results = pickle.load(f)
+        if os.path.exists(soft_pkl):
+            with open(soft_pkl, "rb") as f:
+                soft_res = pickle.load(f)
+            alpha = float(soft_res["alpha"])
+            beta  = float(soft_res["beta"])
+            import pandas as pd
+            placements = pd.read_csv(soft_place, sep="\t", index_col="snv")["node"].to_dict()
 
-            placements = em_results["placements"]
-            alpha = em_results["alpha"]
-            beta = em_results["beta"]
-
-        elif os.path.exists(ml_results_path):
-            with open(ml_results_path, "rb") as f:
-                ml_results = pickle.load(f)
-
-            placements = ml_results["placements"]
-            alpha = ml_results.get("alpha", config.alpha_init)
-            beta = ml_results.get("beta", config.beta_init)
-
-        elif os.path.exists(ml_legacy_path):
-            with open(ml_legacy_path, "rb") as f:
-                placements = pickle.load(f)
-
-            alpha = config.alpha_init
-            beta = config.beta_init
+        elif os.path.exists(em_pkl):
+            with open(em_pkl, "rb") as f:
+                em_res = pickle.load(f)
+            placements = em_res["placements"]
+            alpha      = em_res["alpha"]
+            beta       = em_res["beta"]
 
         else:
             raise RuntimeError(
-                "No EM or ML results found. Run 'sntree em' or 'sntree ml' first."
+                "No soft EM or hard EM results found.\n"
+                "Run 'sntree soft-em' or 'sntree em' first."
             )
 
         run_refine(
@@ -282,4 +264,18 @@ def main():
 
     elif args.command == "pipeline":
         from sntree.workflow.pipeline import run_pipeline
-        run_pipeline(args.sample, args.output_root, config, input_paths)
+
+        if getattr(args, "no_refine", False):
+            # Soft EM pass 1 only — run it directly
+            from sntree.workflow.soft_em import run_soft_em
+            run_soft_em(
+                args.sample,
+                args.output_root,
+                config,
+                input_paths,
+                joint=None,   # auto-detect
+                output_subdir="soft_em",
+                pass_label="pass 1 (no refine)",
+            )
+        else:
+            run_pipeline(args.sample, args.output_root, config, input_paths)

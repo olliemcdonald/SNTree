@@ -23,6 +23,7 @@ def em_soft(
     init_alpha,
     init_beta,
     init_pi0=0.5,
+    init_pi_b=None,
     alpha_dir=1.0,
     p0=MU_ERR,
     p1_fp_mode="one_over_c",
@@ -87,8 +88,13 @@ def em_soft(
     L = snv_dataset.n_leaves
     M = snv_dataset.n_snvs
 
-    # Uniform initialisation of branch proportions
-    pi_b = np.full(N, 1.0 / N)
+    # Initialise branch proportions — warm-start if provided, else uniform
+    if init_pi_b is not None:
+        pi_b = np.asarray(init_pi_b, dtype=np.float64).copy()
+        s = pi_b.sum()
+        pi_b = pi_b / s if s > 0 else np.full(N, 1.0 / N)
+    else:
+        pi_b = np.full(N, 1.0 / N)
 
     # leaf_desc_mask (N, L) bool → float for matmul
     leaf_desc = cna_tree.leaf_desc_mask.astype(np.float64)  # (N, L)
