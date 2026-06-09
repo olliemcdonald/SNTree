@@ -114,10 +114,11 @@ def run_pipeline(sample, output_root, config, input_paths):
             input_paths,
             init_alpha=alpha,
             init_beta=beta,
-            init_pi_b=soft1["pi_b"],           # warm-start from pass 1
+            init_pi_b=soft1["pi_b"],
+            init_node_names=soft1["node_names"],  # needed to match pi_b to refined tree
             tree_path_override=refined_tree_path,
             output_subdir="soft_em_pass2",
-            joint=False,                        # alpha/beta fixed from pass 1
+            joint=False,
             pass_label="pass 2 (warm start)",
         )
         print(f"[{now()}] Soft EM pass 2 complete (runtime={time.time() - t0:.2f} sec)")

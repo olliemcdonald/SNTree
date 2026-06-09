@@ -86,6 +86,7 @@ def run_soft_em(
     init_alpha=None,
     init_beta=None,
     init_pi_b=None,
+    init_node_names=None,
     tree_path_override=None,
     output_subdir="soft_em",
     joint=None,
@@ -102,6 +103,10 @@ def run_soft_em(
     init_pi_b : np.ndarray or None
         Warm-start branch proportions (e.g. from a previous pass).
         If None and warm_start_pkl is also None, initialises uniformly.
+    init_node_names : list or None
+        Node names corresponding to init_pi_b entries.  Required when
+        init_pi_b is supplied directly (not via warm_start_pkl) and the
+        target tree may have a different node count (e.g. pass 2 after NNI).
     tree_path_override : str or None
         Path to a Newick tree to use instead of input_paths.preprocessed_tree.
         Used for pass 2 to load the NNI-refined tree.
@@ -140,10 +145,11 @@ def run_soft_em(
         if init_beta is None:
             init_beta  = float(ws["beta"])
         if init_pi_b is None:
-            init_pi_b  = ws["pi_b"]          # array; matched by name below
+            init_pi_b  = ws["pi_b"]
         warm_node_names = ws.get("node_names", None)
     else:
-        warm_node_names = None
+        # Node names may be supplied directly alongside init_pi_b (pipeline pass 2)
+        warm_node_names = init_node_names
 
     init_alpha = float(init_alpha) if init_alpha is not None else config.alpha_init
     init_beta  = float(init_beta)  if init_beta  is not None else config.beta_init
