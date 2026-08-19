@@ -19,6 +19,7 @@ REQUIRED_BY_COMMAND = {
     "ml": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
     "em": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
     "soft-em": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
+    "score": ("preprocessed_tree", "sample_mapping", "cna_profiles", "vcf"),
     "refine": (
         "preprocessed_tree",
         "sample_mapping",

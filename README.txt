@@ -66,11 +66,97 @@ Options:
 
 Outputs (written to output_root/<sample>/sntree/soft_em/ by default):
     branch_proportions.tsv      pi_b per branch, sorted by magnitude
-    placements_soft.tsv         MAP SNV placements derived from soft EM
-    soft_em_results.pkl         Full results: pi_b, pi_0, alpha, beta, history
+    placements_soft.tsv         MAP SNV placements derived from soft EM,
+                                with per-SNV confidence (see below)
+    soft_em_results.pkl         Full results: pi_b, pi_0, alpha, beta, history,
+                                and the scoring conditions (p0, p1_fp_mode,
+                                tree_path) used by 'sntree score'
+
+placements_soft.tsv columns:
+    snv             SNV id
+    node            MAP placement, or "Null"
+    llr_null        best branch score minus the null score — how much better
+                    the best branch is than "this is noise".  Null placements
+                    report it as computed (<= 0).
+    llr_margin      best minus second-best branch score — how confident the
+                    branch choice is
+    score_status    ok               both LLRs finite; only these loci are
+                                     eligible for LLR-based filtering
+                    no_margin        fewer than two branches possible;
+                                     llr_margin is NaN
+                    no_valid_branch  every branch impossible; llr_null is -inf
+                    null_impossible  the null is impossible; llr_null is +inf
+                    undefined        neither is possible; llr_null is NaN
+
+The snv and node columns are unchanged from earlier versions.  Non-finite
+values are written raw rather than clamped, so readers must handle them: in R
+use read.delim(..., na.strings = c("NA", "NaN")) and expect lowercase "inf" /
+"-inf" in rows whose score_status is not "ok".
 
 
-3) sntree em  [hard EM — opt-in]
+3) sntree score
+
+Scores placements from converged soft EM parameters — one E-step pass rather
+than a full EM run — and optionally builds an empirical null for llr_null by
+permuting the assignment of cells to tree tips.
+
+    sntree score <sample> <input_root> <output_root>
+    sntree score <sample> <input_root> <output_root> \
+        --subsample-loci 200000 --permute --replicates 2
+
+Why permute: a real mutation's alt-carrying cells sit in one clade, so
+shuffling which cell sits at which tip destroys their concordance and its
+llr_null collapses.  A site-recurrent artefact is scattered to begin with and
+is unaffected.  The permuted pass therefore gives a null distribution for
+llr_null against which a threshold can be calibrated empirically.  Each cell's
+read counts move with it intact; only the cell → tip mapping changes, and a
+fresh shuffle is drawn per locus batch so the resulting null loci are
+near-independent.
+
+The null is over loci, not replicates: one permuted pass over 200k loci is
+already enough to place a threshold quantile.  Use --replicates 2 or 3 only to
+check stability.
+
+Options:
+    --results-pkl PATH       soft_em_results.pkl to score
+                             (default: .../sntree/soft_em/soft_em_results.pkl)
+    --refined-tree PATH      Tree the parameters were fit on.  Required when
+                             scoring a pass-2 fit; the run aborts rather than
+                             score under a mismatched prior.
+    --output-subdir NAME     Override the output subdirectory
+                             (default: the directory holding the results pkl)
+    --permute                Also run permuted passes
+    --seed INT               Permutation seed (default 0); replicate r uses seed+r
+    --replicates INT         Number of permuted passes (default 1)
+    --subsample-loci N       Score only N randomly chosen loci (default: all)
+    --subsample-seed INT     Seed for locus subsampling (default 0).  Separate
+                             from --seed, so the observed pass and every
+                             replicate score exactly the same loci.
+
+Outputs (alongside the scored parameters, e.g. .../sntree/soft_em/):
+    llr_observed.tsv            Per-SNV scores, columns as placements_soft.tsv
+    llr_permuted_seed<S>.tsv    Same, one per permuted replicate
+    llr_status_counts.tsv       score_status counts per run
+    llr_summary.tsv             llr_null quantiles, observed against the
+                                permuted null, and how many observed loci
+                                survive each permuted quantile as a threshold
+
+Quantiles are computed over score_status == "ok" loci only, in both the
+observed and the permuted runs — including non-ok loci in one but not the
+other would make the two distributions non-comparable and the threshold wrong.
+
+llr_summary.tsv is stratified by the layer each locus was placed in (truncal =
+the root, subclonal = any other branch, null, and pooled "all").  This matters:
+a truncal placement barely moves under tip permutation, because the root's
+clade is every cell and shuffling which cell sits at which tip changes almost
+nothing.  Only subclonal placements lose their concordance.  When the truncal
+layer dominates — as it does at low coverage — the tail of a pooled null is
+made up entirely of loci the permutation could not touch, and a threshold read
+off it is far too high for the subclonal layer it was meant to filter.  Take
+the subclonal threshold from the "subclonal" rows.
+
+
+4) sntree em  [hard EM — opt-in]
 
 Hard EM: iteratively estimates alpha and beta and produces MAP SNV
 placements via argmax. Use this if you specifically need hard calls
@@ -84,7 +170,7 @@ Outputs (output_root/<sample>/sntree/em/):
     em_results.pkl              alpha, beta, placements, history
 
 
-4) sntree refine
+5) sntree refine
 
 Refines CNA-identical clades using SNV placements from a prior stage.
 
@@ -105,7 +191,7 @@ Outputs (output_root/<sample>/sntree/refine/):
         likelihood.txt
 
 
-5) sntree pipeline
+6) sntree pipeline
 
 Full pipeline, run end-to-end.
 
@@ -149,6 +235,17 @@ Manual staged workflow (soft EM default):
 Soft EM pass 1 only (skip refinement and pass 2):
 
     sntree pipeline C2 /input /output --no-refine
+
+Calibrating a per-SNV confidence threshold after a pipeline run (the permuted
+pass gives the null distribution llr_null should be thresholded against):
+
+    sntree score C2 /input /output \
+        --results-pkl /output/C2/sntree/soft_em_pass2/soft_em_results.pkl \
+        --refined-tree /output/C2/sntree/refine/refined_full_tree.new \
+        --subsample-loci 200000 --permute --replicates 2
+
+Then read llr_summary.tsv: a permuted quantile is the candidate threshold, and
+the observed counts beside it say how many placements survive it.
 
 Hard MAP placements only (original behaviour):
 
@@ -219,8 +316,12 @@ Output Directory Structure
     tree_preprocessed.new
     soft_em/
         branch_proportions.tsv      Relative mutation burden pi_b per branch
-        placements_soft.tsv         MAP placements from soft EM
+        placements_soft.tsv         MAP placements + per-SNV llr_null/llr_margin
         soft_em_results.pkl
+        llr_observed.tsv            (if sntree score was run)
+        llr_permuted_seed<S>.tsv    (if sntree score --permute was run)
+        llr_status_counts.tsv
+        llr_summary.tsv
     refine/
         refined_full_tree.new
         group_XXX/

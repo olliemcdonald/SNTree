@@ -23,6 +23,10 @@ def main():
             "  sntree soft-em   SAMPLE /input /output \\\n"
             "      --refined-tree /output/SAMPLE/sntree/refine/refined_full_tree.new \\\n"
             "      --warm-start-pkl /output/SAMPLE/sntree/soft_em/soft_em_results.pkl\n\n"
+            "Per-SNV confidence + permutation null:\n"
+            "  sntree score SAMPLE /input /output --subsample-loci 200000\n"
+            "  sntree score SAMPLE /input /output --subsample-loci 200000 \\\n"
+            "      --permute --replicates 2\n\n"
             "With hard EM:\n"
             "  sntree pipeline SAMPLE /input /output --hard-em\n"
         ),
@@ -119,6 +123,71 @@ def main():
         "--output-subdir",
         default=None,
         help="Output subdirectory name under .../sntree/ (default: soft_em or soft_em_pass2).",
+    )
+
+    # ── score ─────────────────────────────────────────────────────────────
+    sp_score = subparsers.add_parser(
+        "score",
+        help=(
+            "Score placements from converged soft EM parameters (one E-step,\n"
+            "no EM), reporting per-SNV llr_null and llr_margin.  With\n"
+            "--permute, also score against shuffled cell → tip assignments to\n"
+            "build an empirical null for llr_null."
+        ),
+    )
+    add_common_args(sp_score)
+    sp_score.add_argument(
+        "--results-pkl",
+        default=None,
+        help="Path to a soft_em_results.pkl to score\n"
+             "(default: .../sntree/soft_em/soft_em_results.pkl).",
+    )
+    sp_score.add_argument(
+        "--refined-tree",
+        default=None,
+        help="Tree the parameters were fit on, if not the preprocessed one.\n"
+             "Required when scoring a pass-2 fit.",
+    )
+    sp_score.add_argument(
+        "--output-subdir",
+        default=None,
+        help="Output subdirectory name under .../sntree/\n"
+             "(default: the directory holding the results pkl).",
+    )
+    sp_score.add_argument(
+        "--permute",
+        action="store_true",
+        default=False,
+        help="Also run permuted passes: the cell → tip assignment is shuffled\n"
+             "(read counts per cell left intact) so clade concordance is\n"
+             "destroyed, giving an empirical null distribution for llr_null.",
+    )
+    sp_score.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Seed for the permutation (default 0).  Replicate r uses seed+r.",
+    )
+    sp_score.add_argument(
+        "--replicates",
+        type=int,
+        default=1,
+        help="Number of permuted passes (default 1).  The null is over loci,\n"
+             "not replicates — 2 or 3 is enough to check stability.",
+    )
+    sp_score.add_argument(
+        "--subsample-loci",
+        type=int,
+        default=None,
+        help="Score only N randomly chosen loci (default: all).  200k is\n"
+             "ample for placing a threshold quantile.",
+    )
+    sp_score.add_argument(
+        "--subsample-seed",
+        type=int,
+        default=0,
+        help="Seed for locus subsampling (default 0).  Separate from --seed so\n"
+             "the observed pass and every replicate score the same loci.",
     )
 
     # ── refine ────────────────────────────────────────────────────────────
@@ -219,6 +288,24 @@ def main():
             warm_start_pkl=args.warm_start_pkl,
             output_subdir=subdir,
             joint=joint_override,
+        )
+
+    elif args.command == "score":
+        from sntree.workflow.score import run_score
+
+        run_score(
+            args.sample,
+            args.output_root,
+            config,
+            input_paths,
+            results_pkl=args.results_pkl,
+            tree_path_override=args.refined_tree,
+            output_subdir=args.output_subdir,
+            permute=args.permute,
+            seed=args.seed,
+            replicates=args.replicates,
+            subsample_loci=args.subsample_loci,
+            subsample_seed=args.subsample_seed,
         )
 
     elif args.command == "refine":

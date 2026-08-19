@@ -13,9 +13,22 @@ def locus_loglik_batch(
     p0=MU_ERR,
     p1_fp_mode="one_over_c",
     include_edge=False,
+    cell_perm=None,
 ):
     """
     Fully vectorized batched locus DP.
+
+    cell_perm : array of leaf-column indices or None
+        Optional permutation of the cell → tip assignment.  Column j (the tip
+        occupying leaf column j) is scored against cell cell_perm[j]'s read
+        counts, leaving every cell's (k, n) pair intact.  Used to build a
+        permutation null for clade concordance; None leaves the data untouched.
+
+        The permutation is applied to the read matrices rather than to
+        cna_tree.leaf_order because p1_vec below is indexed by leaf column, so
+        permuting leaf_order would move the reads without moving the p1 used in
+        the absent channel — silently changing the null model.
+
     Returns:
         logL_nodes: (N_nodes, B)
         logL_null:  (B,)
@@ -31,6 +44,11 @@ def locus_loglik_batch(
     # extract matrices (B, L)
     ks = snv_dataset.ks[batch]
     ns = snv_dataset.ns[batch]
+
+    if cell_perm is not None:
+        ks = ks[:, cell_perm]
+        ns = ns[:, cell_perm]
+
     L = ks.shape[1]
 
     # error mixture logs

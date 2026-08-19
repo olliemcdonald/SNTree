@@ -5,12 +5,8 @@ import time
 import pickle
 import numpy as np
 import pandas as pd
-from cyvcf2 import VCF
 
-from sntree.io.io_tree import read_preprocessed_tree
-from sntree.io.io_cna import import_cna_data, add_cna, cna_lookups, add_cna_bins
-from sntree.io.io_snv import vcf_list_to_tables, snv_lookups
-from sntree.io.io_preprocess import build_all
+from sntree.workflow.load_inputs import load_structures
 from sntree.likelihood.em_soft import em_soft
 from sntree.likelihood.locus_loglik_batch import locus_loglik_batch
 from sntree.constants import MU_ERR, EPS
@@ -18,6 +14,174 @@ from sntree.constants import MU_ERR, EPS
 
 def now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+#: Statuses recorded per locus in the ``score_status`` column.  Only "ok" loci
+#: carry both a finite llr_null and a finite llr_margin and are therefore
+#: eligible for LLR-based filtering; every other status must be handled
+#: explicitly (and identically) in the observed and permuted passes, or the two
+#: distributions stop being comparable.
+SCORE_STATUS_OK              = "ok"               # both LLRs finite
+SCORE_STATUS_NO_MARGIN       = "no_margin"        # < 2 finite branches, llr_null finite
+SCORE_STATUS_NO_VALID_BRANCH = "no_valid_branch"  # every branch score -inf
+SCORE_STATUS_NULL_IMPOSSIBLE = "null_impossible"  # null score -inf, best branch finite
+SCORE_STATUS_UNDEFINED       = "undefined"        # -inf - -inf, i.e. NaN
+
+PLACEMENT_COLUMNS = ["node", "llr_null", "llr_margin", "score_status"]
+
+
+def score_placements(
+    cna_tree,
+    snv_dataset,
+    transitions,
+    alpha,
+    beta,
+    pi_b,
+    pi_0,
+    p0=MU_ERR,
+    p1_fp_mode="one_over_c",
+    batch_size=1024,
+    snv_mask=None,
+    cell_perm_rng=None,
+):
+    """
+    Score every locus under the converged soft EM parameters.
+
+    One E-step pass.  For each locus this evaluates
+
+        log_null_score   = log π_0     + log L_m(∅ | α)
+        log_branch_score = log(1-π_0)  + log π_b + log L_m(b | α, β)
+
+    and reports the MAP placement together with two confidence quantities:
+
+        llr_null   = best_branch_score - null_score
+                     how much better the best branch is than "this is noise"
+        llr_margin = best_branch_score - second_best_branch_score
+                     how confident the branch choice is
+
+    The MAP placement itself is identical to what compute_map_placements has
+    always produced, including the "Null" sentinel and its tie-breaking.
+
+    Parameters
+    ----------
+    snv_mask : bool array (n_snvs,) or None
+        Restrict scoring to a subset of loci (e.g. a subsample for a
+        permutation null).  None scores every locus.
+    cell_perm_rng : np.random.Generator or None
+        When given, a fresh cell → tip permutation is drawn per locus batch and
+        applied to the read counts (see locus_loglik_batch's cell_perm).  A real
+        mutation's alt cells sit in one clade and lose their concordance under
+        the shuffle; a scattered artefact is unaffected.  Redrawing per batch
+        keeps loci in the resulting null near-independent.
+
+    Returns
+    -------
+    pd.DataFrame indexed by "snv" with columns
+        node, llr_null, llr_margin, score_status
+    """
+    log_pi_b  = np.log(np.maximum(pi_b, EPS))
+    log_pi_0  = np.log(max(pi_0, EPS))
+    log_1mpi0 = np.log(max(1.0 - pi_0, EPS))
+
+    N = cna_tree.n_nodes
+    L = snv_dataset.n_leaves
+    node_names = np.array(
+        [cna_tree.idx_to_ete[i].name for i in range(N)], dtype=object
+    )
+
+    out_snv        = []
+    out_node       = []
+    out_llr_null   = []
+    out_llr_margin = []
+    out_status     = []
+
+    for seg, snv_idx_list in snv_dataset.snvs_by_seg.items():
+        snv_idx_list = np.asarray(snv_idx_list)
+        if snv_mask is not None:
+            snv_idx_list = snv_idx_list[snv_mask[snv_idx_list]]
+        if snv_idx_list.size == 0:
+            continue
+
+        for i0 in range(0, len(snv_idx_list), batch_size):
+            batch = snv_idx_list[i0 : i0 + batch_size]
+
+            cell_perm = None
+            if cell_perm_rng is not None:
+                cell_perm = cell_perm_rng.permutation(L)
+
+            logL_nodes, logL_null = locus_loglik_batch(
+                cna_tree, snv_dataset, transitions, batch,
+                alpha=alpha, beta=beta, p0=p0,
+                p1_fp_mode=p1_fp_mode,
+                cell_perm=cell_perm,
+            )
+
+            null_score   = log_pi_0  + logL_null                          # (B,)
+            branch_score = log_1mpi0 + log_pi_b[:, None] + logL_nodes     # (N, B)
+
+            # ── MAP placement (unchanged semantics) ───────────────────────
+            best_idx   = np.argmax(branch_score, axis=0)                  # (B,)
+            best_score = branch_score[best_idx, np.arange(len(batch))]    # (B,)
+            is_branch  = best_score > null_score      # strict: ties → "Null"
+            node       = np.where(is_branch, node_names[best_idx], "Null")
+
+            # ── Confidence quantities ─────────────────────────────────────
+            n_finite = np.isfinite(branch_score).sum(axis=0)              # (B,)
+
+            with np.errstate(invalid="ignore"):
+                llr_null = best_score - null_score     # ±inf, or NaN for inf-inf
+
+            # Second-best branch.  -inf sorts below every finite value, so the
+            # overall runner-up is the finite runner-up whenever two branches
+            # are finite; where fewer are, the margin is undefined rather than
+            # infinite — an infinite margin is an absent comparison, not a
+            # confident call.
+            llr_margin = np.full(len(batch), np.nan)
+            if N >= 2:
+                second_score = np.partition(branch_score, N - 2, axis=0)[N - 2]
+                have_margin  = n_finite >= 2
+                llr_margin[have_margin] = (
+                    best_score[have_margin] - second_score[have_margin]
+                )
+
+            status = np.where(
+                np.isnan(llr_null), SCORE_STATUS_UNDEFINED,
+                np.where(
+                    n_finite == 0, SCORE_STATUS_NO_VALID_BRANCH,
+                    np.where(
+                        np.isneginf(null_score), SCORE_STATUS_NULL_IMPOSSIBLE,
+                        np.where(
+                            n_finite < 2, SCORE_STATUS_NO_MARGIN,
+                            SCORE_STATUS_OK,
+                        ),
+                    ),
+                ),
+            )
+
+            out_snv.append(snv_dataset.snv_ids[batch])
+            out_node.append(node)
+            out_llr_null.append(llr_null)
+            out_llr_margin.append(llr_margin)
+            out_status.append(status)
+
+    if not out_snv:
+        df = pd.DataFrame(columns=PLACEMENT_COLUMNS)
+        df.index.name = "snv"
+        return df
+
+    df = pd.DataFrame({
+        "node":         np.concatenate(out_node),
+        "llr_null":     np.concatenate(out_llr_null),
+        "llr_margin":   np.concatenate(out_llr_margin),
+        "score_status": np.concatenate(out_status),
+    }, index=pd.Index(np.concatenate(out_snv), name="snv"))
+
+    return df
+
+
+def write_placements_tsv(df, path):
+    """Write a score_placements frame, preserving inf/NaN faithfully."""
+    df.to_csv(path, sep="\t", float_format="%.6g", na_rep="NaN")
 
 
 def compute_map_placements(
@@ -38,44 +202,18 @@ def compute_map_placements(
     For each locus the MAP assignment is:
         argmax over {null, branches} of  log π_b + log L_m(b | α, β)
 
+    Thin wrapper over score_placements, kept for its dict contract.
+
     Returns
     -------
     dict  {snv_id: node_name}   (null placements map to "Null")
     """
-    log_pi_b  = np.log(np.maximum(pi_b, EPS))
-    log_pi_0  = np.log(max(pi_0, EPS))
-    log_1mpi0 = np.log(max(1.0 - pi_0, EPS))
-
-    placements = {}
-
-    for seg, snv_idx_list in snv_dataset.snvs_by_seg.items():
-        for i0 in range(0, len(snv_idx_list), batch_size):
-            batch = snv_idx_list[i0 : i0 + batch_size]
-
-            logL_nodes, logL_null = locus_loglik_batch(
-                cna_tree, snv_dataset, transitions, batch,
-                alpha=alpha, beta=beta, p0=p0,
-                p1_fp_mode=p1_fp_mode,
-            )
-
-            # Log-scores: (N+1, B_batch) with null in row 0
-            log_null_score   = log_pi_0  + logL_null               # (B_batch,)
-            log_branch_score = log_1mpi0 + log_pi_b[:, None] + logL_nodes  # (N, B_batch)
-
-            for j, snv_idx in enumerate(batch):
-                snv_id = snv_dataset.snv_ids[snv_idx]
-                branch_scores = log_branch_score[:, j]
-                null_score    = log_null_score[j]
-
-                best_branch_idx = int(np.argmax(branch_scores))
-                if branch_scores[best_branch_idx] > null_score:
-                    node_name = cna_tree.idx_to_ete[best_branch_idx].name
-                else:
-                    node_name = "Null"
-
-                placements[snv_id] = node_name
-
-    return placements
+    df = score_placements(
+        cna_tree, snv_dataset, transitions,
+        alpha=alpha, beta=beta, pi_b=pi_b, pi_0=pi_0,
+        p0=p0, p1_fp_mode=p1_fp_mode, batch_size=batch_size,
+    )
+    return df["node"].to_dict()
 
 
 def run_soft_em(
@@ -154,48 +292,9 @@ def run_soft_em(
     init_alpha = float(init_alpha) if init_alpha is not None else config.alpha_init
     init_beta  = float(init_beta)  if init_beta  is not None else config.beta_init
 
-    # ── Load tree ──────────────────────────────────────────────────────────
+    # ── Load tree / CNA / SNVs and build unified structures ────────────────
     tree_path = tree_path_override or input_paths.preprocessed_tree
-    print(f"[{now()}] Loading tree from {tree_path}")
-    if not os.path.exists(tree_path):
-        raise RuntimeError(
-            f"Tree not found at {tree_path}. "
-            "Run 'sntree preprocess' (and 'sntree refine' for pass 2) first."
-        )
-    t = read_preprocessed_tree(tree_path)
-
-    # ── Load CNA ───────────────────────────────────────────────────────────
-    print(f"[{now()}] Loading CNA profiles...")
-    sample_mapping, cna_profiles = import_cna_data(
-        input_paths.sample_mapping,
-        input_paths.cna_profiles,
-    )
-    cna_idx, _ = cna_lookups(cna_profiles)
-    cna_profiles = add_cna_bins(cna_profiles, cna_idx)
-    t = add_cna(t, sample_mapping, cna_profiles)
-
-    # ── Load SNVs ──────────────────────────────────────────────────────────
-    print(f"[{now()}] Loading SNVs...")
-    vcf_list = VCF(input_paths.vcf)
-    variant_ids, ref_df, alt_df, normal_ref, normal_alt = vcf_list_to_tables(
-        vcf_list, min_cells=2, normal_name=input_paths.normal_name
-    )
-    snv_df, snv_dict, ref_df, alt_df, normal_ref, normal_alt = snv_lookups(
-        variant_ids, cna_idx,
-        ref_df=ref_df, alt_df=alt_df,
-        normal_ref=normal_ref, normal_alt=normal_alt,
-    )
-
-    # ── Build unified structures ───────────────────────────────────────────
-    print(f"[{now()}] Building data structures...")
-    cna_tree, snv_dataset, transitions = build_all(
-        ete_tree=t,
-        cna_profiles=cna_profiles,
-        sample_mapping=sample_mapping,
-        ref_df=ref_df,
-        alt_df=alt_df,
-        snv_df=snv_df,
-    )
+    cna_tree, snv_dataset, transitions = load_structures(input_paths, tree_path)
 
     node_names = [cna_tree.idx_to_ete[i].name for i in range(cna_tree.n_nodes)]
 
@@ -246,9 +345,9 @@ def run_soft_em(
     print(f"[{now()}] Soft EM complete (runtime={time.time() - t0:.2f} sec)")
     print(f"[{now()}] alpha={alpha:.5f}  beta={beta:.5f}  pi_0={pi_0:.4f}")
 
-    # ── Derive MAP placements (for refinement / downstream) ───────────────
+    # ── Derive MAP placements + per-SNV LLRs (for refinement / downstream) ─
     print(f"[{now()}] Computing MAP placements from soft assignments...")
-    placements = compute_map_placements(
+    placements_df = score_placements(
         cna_tree, snv_dataset, transitions,
         alpha=alpha, beta=beta,
         pi_b=pi_b, pi_0=pi_0,
@@ -256,6 +355,11 @@ def run_soft_em(
         p1_fp_mode="one_over_c",
         batch_size=config.batch_size,
     )
+    placements = placements_df["node"].to_dict()
+
+    n_ok = int((placements_df["score_status"] == SCORE_STATUS_OK).sum())
+    print(f"[{now()}] Scored {len(placements_df)} loci "
+          f"({n_ok} with both LLRs finite)")
 
     # ── Save branch proportions TSV ───────────────────────────────────────
     pi_df = pd.DataFrame({
@@ -270,23 +374,25 @@ def run_soft_em(
     )
 
     # ── Save MAP placements TSV ───────────────────────────────────────────
-    placements_df = pd.DataFrame.from_dict(
-        placements, orient="index", columns=["node"]
-    )
-    placements_df.index.name = "snv"
-    placements_df.to_csv(
-        os.path.join(sample_out, "placements_soft.tsv"), sep="\t"
+    # Columns snv/node keep their original semantics (including the "Null"
+    # sentinel); llr_null/llr_margin/score_status are appended.
+    write_placements_tsv(
+        placements_df, os.path.join(sample_out, "placements_soft.tsv")
     )
 
     # ── Save full pickle ───────────────────────────────────────────────────
     with open(os.path.join(sample_out, "soft_em_results.pkl"), "wb") as f:
         pickle.dump({
-            "pi_b":       pi_b,
-            "pi_0":       pi_0,
-            "node_names": node_names,
-            "alpha":      alpha,
-            "beta":       beta,
-            "history":    history,
+            "pi_b":        pi_b,
+            "pi_0":        pi_0,
+            "node_names":  node_names,
+            "alpha":       alpha,
+            "beta":        beta,
+            "history":     history,
+            # Scoring conditions, so 'sntree score' can reproduce this fit
+            "p0":          config.p0,
+            "p1_fp_mode":  "one_over_c",
+            "tree_path":   tree_path,
         }, f)
 
     print(f"[{now()}] Results written to {sample_out}/")
