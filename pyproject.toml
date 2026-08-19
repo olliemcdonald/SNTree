@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sntree"
-version = "0.1.0"
+version = "0.2.0"
 description = "Phylogeny-aware single-cell SNV inference under copy number variation"
 authors = [{ name = "Thomas O McDonald" }]
 readme = "README.txt"
