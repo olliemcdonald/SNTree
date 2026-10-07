@@ -109,7 +109,7 @@ shuffling which cell sits at which tip destroys their concordance and its
 llr_null collapses.  A site-recurrent artefact is scattered to begin with and
 is unaffected.  The permuted pass therefore gives a null distribution for
 llr_null against which a threshold can be calibrated empirically.  Each cell's
-read counts move with it intact; only the cell → tip mapping changes, and a
+read counts move with it intact; only the cell to tip mapping changes, and a
 fresh shuffle is drawn per locus batch so the resulting null loci are
 near-independent.
 
@@ -156,7 +156,7 @@ off it is far too high for the subclonal layer it was meant to filter.  Take
 the subclonal threshold from the "subclonal" rows.
 
 
-4) sntree em  [hard EM — opt-in]
+4) sntree em  [hard EM]
 
 Hard EM: iteratively estimates alpha and beta and produces MAP SNV
 placements via argmax. Use this if you specifically need hard calls
@@ -372,11 +372,11 @@ Two-pass workflow:
     from pass 1.
 
 CNA-identical clades:
-    Within these clades, predicted VAF is identical for all branches,
+    Within these clades, predicted CN profiles are identical for all branches
     so only per-cell read distributions discriminate them. For clonal
     samples, the two-pass approach is especially important: NNI
-    refinement resolves within-clade topology, and pass 2 then assigns
-    mutation burden to the refined branches.
+    refinement resolves within-clade topology using only SNVs,
+    and pass 2 then assigns mutation burden to the refined branches.
 
 Clock correction (downstream):
     pi_b can be SBS5-corrected downstream:
@@ -389,11 +389,7 @@ Clock correction (downstream):
 Notes
 ------------------------------------------------------------
 
-- The refinement stage assumes CNA-identical groups have no CN transitions
-  below their MRCA.
 - The EM stage uses the CNA-aware inside-outside likelihood model.
-- The soft EM reuses inside-outside DP scores; it adds negligible runtime
-  compared to the inside-outside pass itself.
 - The refinement stage uses a constant-CN cached likelihood for efficiency.
 - All stages are independent and resumable.
 
