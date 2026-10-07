@@ -1,13 +1,8 @@
-"""
-Constant-CN local likelihood for subtree refinement.
+"""Fixed-diploid local likelihood for subtree refinement.
 
-Assumptions:
-    - All nodes in the subtree share identical total CN.
-    - No CNA transitions below MRCA.
-    - Expected VAF for present mutation = 1 / CN.
-    - No transition matrix, no DP, no multiplicity convolution.
-
-Designed to be used inside NNI or tree rearrangement (SPR) refinement.
+Every present descendant and one-copy false-positive component is evaluated at
+VAF 0.5.  CN profiles remain available to the surrounding refinement workflow
+to define which clades may be refined, but do not affect this likelihood.
 """
 
 from typing import Dict, Tuple
@@ -33,22 +28,16 @@ def build_local_likelihood_cache(
     """
     Precompute delta and total_absent for constant-CN subtree model.
 
-    CN is constant across subtree, but may vary by genomic segment.
+    The refinement model is fixed diploid: every present or one-copy
+    false-positive component is evaluated at VAF 0.5, independent of the
+    CN profile supplied with the tree.
     """
 
     S, L = ks.shape
 
-    # --- Build per-SNV p1 vector ---
-    p1_vec = np.zeros(S, dtype=np.float64)
-
-    for s in range(S):
-        seg = int(snv_segments[s])
-        cn_seg = cn_profile[seg]["cn_tot"]
-
-        if cn_seg <= 0:
-            p1_vec[s] = 0.0
-        else:
-            p1_vec[s] = 1.0 / cn_seg
+    # Fixed diploid VAF.  Keep cn_profile and snv_segments in the signature
+    # because refinement's callers supply them, but do not use them here.
+    p1_vec = np.full(S, 0.5, dtype=np.float64)
 
     # Broadcast to (S, L)
     p1_mat = p1_vec[:, None]

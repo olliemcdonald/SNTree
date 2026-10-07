@@ -33,9 +33,10 @@ def em_alpha_beta(
     L = snv_dataset.n_leaves
     N = cna_tree.n_nodes
     depth = cna_tree.depth
-    leaf_desc = cna_tree.leaf_desc_mask
     leaf_order = cna_tree.leaf_order
-    leaf_to_node = cna_tree.leaf_to_node
+    # Match descendant masks to the SNV read-count column order.
+    leaf_desc = np.zeros_like(cna_tree.leaf_desc_mask, dtype=bool)
+    leaf_desc[:, leaf_order] = cna_tree.leaf_desc_mask
 
     placements = {}
     history = []
@@ -89,16 +90,8 @@ def em_alpha_beta(
                     ks = snv_dataset.ks[snv_idx]
                     ns = snv_dataset.ns[snv_idx]
 
-                    # p1 fp vector for whole leaves
-                    if isinstance(p1_fp_mode, (int, float)):
-                        p1 = np.full(L, float(p1_fp_mode))
-                    else:
-                        # p1 = 1/c_leaf
-                        p1 = np.zeros(L)
-                        for leaf_idx in range(L):
-                            node_idx = leaf_to_node[leaf_idx]
-                            c_leaf = cna_tree.CN[node_idx, seg]
-                            p1[leaf_idx] = (1.0/c_leaf) if c_leaf>0 else 0.0
+                    # Fixed-diploid model: CN is not used in the emission.
+                    p1 = np.full(L, 0.5)
 
                     # leaves with coverage
                     mask_cov = ns > 0
@@ -172,15 +165,8 @@ def em_alpha_beta(
                         leaf_inside = leaf_desc[best_node]
                     leaf_outside = ~leaf_inside
 
-                    # p1 
-                    if isinstance(p1_fp_mode, (int, float)):
-                        p1 = np.full(L, float(p1_fp_mode))
-                    else:
-                        p1 = np.zeros(L)
-                        for leaf_idx in range(L):
-                            node_idx = leaf_to_node[leaf_idx]
-                            c_leaf = cna_tree.CN[node_idx, seg]
-                            p1[leaf_idx] = (1.0/c_leaf) if c_leaf>0 else 0.0
+                    # Fixed-diploid model: CN is not used in the emission.
+                    p1 = np.full(L, 0.5)
 
                     # coverage mask
                     mask_cov = ns > 0
@@ -195,15 +181,8 @@ def em_alpha_beta(
                     log0 = np.log(max(1-alpha,1e-12)) + logpmf_binom(k,n,p0)
                     q_out.extend(sigmoid_logdiff(log1, log0).tolist())
 
-                    # inside responsibilities
-                    if isinstance(p1_fp_mode, (int,float)):
-                        p_eff = np.full(L, 0.0)
-                    else:
-                        p_eff = np.zeros(L)
-                        for leaf_idx in range(L):
-                            node_idx = leaf_to_node[leaf_idx]
-                            c_leaf = cna_tree.CN[node_idx, seg]
-                            p_eff[leaf_idx] = (1.0/c_leaf) if c_leaf>0 else 0.0
+                    # Present descendants are always heterozygous diploid.
+                    p_eff = np.full(L, 0.5)
 
                     mask = leaf_inside & mask_cov
                     k = ks[mask]

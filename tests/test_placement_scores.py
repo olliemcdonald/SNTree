@@ -14,6 +14,7 @@ import pytest
 from ete4 import Tree
 
 from sntree.io.io_preprocess import build_all
+from sntree.likelihood.local_constant_cn import build_local_likelihood_cache
 from sntree.likelihood.locus_loglik_batch import locus_loglik_batch
 from sntree.workflow.soft_em import (
     score_placements,
@@ -349,28 +350,46 @@ def test_snv_mask_selects_exactly_those_loci_with_unchanged_values(scored):
 
 # ── Status handling ───────────────────────────────────────────────────────
 
-def test_cn_zero_clade_yields_non_ok_statuses_with_nan_margin():
-    """
-    A locus in a segment where most branches are impossible (CN=0) must be
-    flagged, not silently scored: llr_margin is NaN when fewer than two
-    branches are finite, rather than +inf.
-    """
+def test_fixed_diploid_model_ignores_copy_number_profiles():
+    """CN profiles, including CN=0, cannot alter fixed-diploid scores."""
     all_node_names = [n.name for n in _toy_tree()[0].traverse()]
     cn_zero_everywhere = {name: 0 for name in all_node_names}
-    cna_tree, snv_dataset, transitions = _toy_dataset(
+
+    diploid_tree, diploid_dataset, diploid_transitions = _toy_dataset(
+        {"clade": CLADE_CELLS}
+    )
+    cn_zero_tree, cn_zero_dataset, cn_zero_transitions = _toy_dataset(
         {"clade": CLADE_CELLS}, cn_by_node=cn_zero_everywhere
     )
-    df = score_placements(
-        cna_tree, snv_dataset, transitions, **_uniform_params(cna_tree)
+
+    diploid_scores = score_placements(
+        diploid_tree,
+        diploid_dataset,
+        diploid_transitions,
+        **_uniform_params(diploid_tree),
+    )
+    cn_zero_scores = score_placements(
+        cn_zero_tree,
+        cn_zero_dataset,
+        cn_zero_transitions,
+        **_uniform_params(cn_zero_tree),
     )
 
-    status = df.loc["clade", "score_status"]
-    assert status != SCORE_STATUS_OK
-    assert status in (SCORE_STATUS_NO_VALID_BRANCH, SCORE_STATUS_NO_MARGIN)
-    assert np.isnan(df.loc["clade", "llr_margin"])
-    assert not np.isposinf(df.loc["clade", "llr_margin"])
+    pd.testing.assert_frame_equal(diploid_scores, cn_zero_scores)
 
-    # Non-ok loci still receive a MAP placement under the existing logic
-    assert df.loc["clade", "node"] in ["Null"] + [
-        cna_tree.idx_to_ete[i].name for i in range(cna_tree.n_nodes)
-    ]
+
+def test_refinement_cache_is_fixed_diploid():
+    """NNI refinement must use the same 0.5 emission model as soft EM."""
+    ks = np.array([[10, 0]])
+    ns = np.array([[20, 20]])
+    segments = np.array([0])
+
+    diploid = build_local_likelihood_cache(
+        ks, ns, segments, {0: {"cn_tot": 2}}, ALPHA, BETA, P0
+    )
+    copy_altered = build_local_likelihood_cache(
+        ks, ns, segments, {0: {"cn_tot": 7}}, ALPHA, BETA, P0
+    )
+
+    np.testing.assert_allclose(diploid[0], copy_altered[0])
+    np.testing.assert_allclose(diploid[1], copy_altered[1])

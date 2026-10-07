@@ -96,8 +96,10 @@ def em_soft(
     else:
         pi_b = np.full(N, 1.0 / N)
 
-    # leaf_desc_mask (N, L) bool → float for matmul
-    leaf_desc = cna_tree.leaf_desc_mask.astype(np.float64)  # (N, L)
+    # The descendant mask is in tree-leaf order.  Re-index it into the SNV
+    # dataset's read-count order for the alpha/beta M-step below.
+    leaf_desc = np.zeros_like(cna_tree.leaf_desc_mask, dtype=np.float64)
+    leaf_desc[:, cna_tree.leaf_order] = cna_tree.leaf_desc_mask
 
     history = []
     last_pi = None
@@ -131,15 +133,9 @@ def em_soft(
         # ── Segment loop (mirrors em_alpha_beta structure) ────────────────
         for seg, snv_idx_list in snv_dataset.snvs_by_seg.items():
 
-            # Per-leaf p1 vector for this segment
-            if isinstance(p1_fp_mode, (int, float)):
-                p1_vec = np.full(L, float(p1_fp_mode))
-            else:  # "one_over_c"
-                p1_vec = np.zeros(L)
-                for lf in range(L):
-                    node_idx = cna_tree.leaf_to_node[lf]
-                    c = cna_tree.CN[node_idx, seg]
-                    p1_vec[lf] = (1.0 / c) if c > 0 else 0.0
+            # Fixed-diploid model: the alpha/beta M-step must use the same
+            # 0.5 emission probability as locus_loglik_batch.
+            p1_vec = np.full(L, 0.5)
 
             for i0 in range(0, len(snv_idx_list), batch_size):
                 batch = snv_idx_list[i0 : i0 + batch_size]

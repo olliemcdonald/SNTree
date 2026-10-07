@@ -10,6 +10,7 @@ def locus_loglik_batch_diploid(
     beta=0.0,
     p0=MU_ERR,
     p1_fp=0.5,   # false positive library genotype rate
+    cell_perm=None,
 ):
     """
     Diploid likelihood with correct alpha/beta formulation:
@@ -20,9 +21,23 @@ def locus_loglik_batch_diploid(
     batch = np.asarray(batch_indices, dtype=int)
     ks = snv_dataset.ks[batch]      # (B, L)
     ns = snv_dataset.ns[batch]      # (B, L)
+
+    # Keep the permutation-null semantics used by the soft-EM scorer: move
+    # read-count columns between fixed tree tips, never the tree itself.
+    if cell_perm is not None:
+        ks = ks[:, cell_perm]
+        ns = ns[:, cell_perm]
     B, L = ks.shape
 
     N = cna_tree.n_nodes
+
+    # Read-count matrices are in SNV-dataset column order, whereas the
+    # descendant mask is in tree-leaf order.  Align the former to the latter
+    # before applying descendant masks (and retain the alignment under a
+    # permutation-null pass).
+    tree_leaf_order = cna_tree.leaf_order
+    ks = ks[:, tree_leaf_order]
+    ns = ns[:, tree_leaf_order]
     leaf_desc = cna_tree.leaf_desc_mask
 
     mask_cov = ns > 0
