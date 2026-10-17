@@ -172,7 +172,7 @@ def refine_group_tree(
     # ---- Initialize topology ----
 
     if init == "nj":
-        pres = (alt_df.to_numpy(dtype=int) > 0)
+        pres = (alt_df.to_numpy() > 0)
         dist = _presence_distance(pres)
         ete_tree = neighbor_joining(dist, list(ref_df.columns))
     else:

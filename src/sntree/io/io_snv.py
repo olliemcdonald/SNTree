@@ -3,6 +3,7 @@ import re
 from cyvcf2 import VCF # type: ignore
 import numpy as np # type: ignore
 import pandas as pd # type: ignore
+from sntree.io.read_counts import READ_COUNT_DTYPE, as_read_counts
 
 def _map_sample_names(samples, name_map=None):
     if not name_map:
@@ -91,8 +92,8 @@ def vcf_to_tables(
                 continue
 
             variant_ids.append(f"{rec.CHROM}:{rec.POS}:{rec.REF}>{a}")
-            ref_rows.append(ref_all[cell_idx])
-            alt_rows.append(alt_col[cell_idx])
+            ref_rows.append(as_read_counts(ref_all[cell_idx], "VCF reference counts"))
+            alt_rows.append(as_read_counts(alt_col[cell_idx], "VCF alternate counts"))
 
             if has_normal:
                 norm_ref.append(int(ref_all[normal_idx]))
@@ -103,16 +104,18 @@ def vcf_to_tables(
 
     # Return empty, well-formed tables if nothing passed
     if len(variant_ids) == 0:
-        ref_df = pd.DataFrame(columns=cell_names, dtype=int)
-        alt_df = pd.DataFrame(columns=cell_names, dtype=int)
-        normal_ref_col = pd.Series([], dtype=int, name="normal_ref")
-        normal_alt_col = pd.Series([], dtype=int, name="normal_alt")
+        ref_df = pd.DataFrame(columns=cell_names, dtype=READ_COUNT_DTYPE)
+        alt_df = pd.DataFrame(columns=cell_names, dtype=READ_COUNT_DTYPE)
+        normal_ref_col = pd.Series([], dtype=READ_COUNT_DTYPE, name="normal_ref")
+        normal_alt_col = pd.Series([], dtype=READ_COUNT_DTYPE, name="normal_alt")
         return variant_ids, ref_df, alt_df, normal_ref_col, normal_alt_col
 
-    ref_df = pd.DataFrame(np.vstack(ref_rows), index=variant_ids, columns=cell_names).fillna(0).astype(int)
-    alt_df = pd.DataFrame(np.vstack(alt_rows), index=variant_ids, columns=cell_names).fillna(0).astype(int)
-    normal_ref_col = pd.Series(norm_ref, index=variant_ids, name="normal_ref").fillna(0).astype(int)
-    normal_alt_col = pd.Series(norm_alt, index=variant_ids, name="normal_alt").fillna(0).astype(int)
+    ref_df = pd.DataFrame(np.vstack(ref_rows), index=variant_ids, columns=cell_names)
+    ref_rows.clear()
+    alt_df = pd.DataFrame(np.vstack(alt_rows), index=variant_ids, columns=cell_names)
+    alt_rows.clear()
+    normal_ref_col = pd.Series(as_read_counts(norm_ref, "Normal reference counts"), index=variant_ids, name="normal_ref")
+    normal_alt_col = pd.Series(as_read_counts(norm_alt, "Normal alternate counts"), index=variant_ids, name="normal_alt")
 
     return variant_ids, ref_df, alt_df, normal_ref_col, normal_alt_col
 
@@ -170,10 +173,10 @@ def vcf_list_to_tables(
     if len(variant_ids_all) == 0:
         return (
             [],
-            pd.DataFrame(),
-            pd.DataFrame(),
-            pd.Series(name="normal_ref", dtype=int),
-            pd.Series(name="normal_alt", dtype=int)
+            pd.DataFrame(dtype=READ_COUNT_DTYPE),
+            pd.DataFrame(dtype=READ_COUNT_DTYPE),
+            pd.Series(name="normal_ref", dtype=READ_COUNT_DTYPE),
+            pd.Series(name="normal_alt", dtype=READ_COUNT_DTYPE)
         )
 
     # ---- Final concatenations (fast, single time) ----
@@ -244,16 +247,18 @@ def vcf_subset_to_tables(
 
             alt_col = AD[:, 1 + j]
             variant_ids.append(snv_id)
-            ref_rows.append(ref_all[cell_idx])
-            alt_rows.append(alt_col[cell_idx])
+            ref_rows.append(as_read_counts(ref_all[cell_idx], "VCF reference counts"))
+            alt_rows.append(as_read_counts(alt_col[cell_idx], "VCF alternate counts"))
 
     if len(variant_ids) == 0:
-        ref_df = pd.DataFrame(columns=cell_names, dtype=int)
-        alt_df = pd.DataFrame(columns=cell_names, dtype=int)
+        ref_df = pd.DataFrame(columns=cell_names, dtype=READ_COUNT_DTYPE)
+        alt_df = pd.DataFrame(columns=cell_names, dtype=READ_COUNT_DTYPE)
         return variant_ids, ref_df, alt_df
 
-    ref_df = pd.DataFrame(np.vstack(ref_rows), index=variant_ids, columns=cell_names).fillna(0).astype(int)
-    alt_df = pd.DataFrame(np.vstack(alt_rows), index=variant_ids, columns=cell_names).fillna(0).astype(int)
+    ref_df = pd.DataFrame(np.vstack(ref_rows), index=variant_ids, columns=cell_names)
+    ref_rows.clear()
+    alt_df = pd.DataFrame(np.vstack(alt_rows), index=variant_ids, columns=cell_names)
+    alt_rows.clear()
 
     return variant_ids, ref_df, alt_df
 

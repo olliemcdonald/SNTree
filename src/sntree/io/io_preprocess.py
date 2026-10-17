@@ -4,6 +4,7 @@ from sntree.model.tree_model import CNATree
 from sntree.model.snv_dataset import SNVDataset
 from sntree.model.transition_model import TransitionModel
 from sntree.phylo.phylo import multi_step_matrix, safe_logM
+from sntree.io.read_counts import READ_COUNT_DTYPE, as_read_counts
 
 def build_cna_tree(ete_tree, cna_profiles, sample_mapping):
     """
@@ -120,8 +121,16 @@ def build_snv_dataset(ref_df, alt_df, snv_df, tree_leaf_names):
     snv_ids = np.array(ref_df_filtered.index)
 
     # ---- 3. Convert matrices ----
-    ks = alt_df_filtered.to_numpy(dtype=int)
-    ns = (alt_df_filtered + ref_df_filtered).to_numpy(dtype=int)
+    ks = as_read_counts(alt_df_filtered.to_numpy(), "Alternate counts")
+    ns = np.empty(ks.shape, dtype=READ_COUNT_DTYPE)
+    # Add in int32 before checking the int16 bound. Keep the wider temporary
+    # bounded instead of allocating another full SNV-by-cell count matrix.
+    ref_values = ref_df_filtered.to_numpy()
+    for start in range(0, len(ks), 1024):
+        stop = start + 1024
+        ref_batch = as_read_counts(ref_values[start:stop], "Reference counts")
+        total = np.add(ref_batch, ks[start:stop], dtype=np.int32)
+        ns[start:stop] = as_read_counts(total, "Total read depth (ref + alt)")
 
 
     # ---- 4. Segments per SNV from snv_df ----

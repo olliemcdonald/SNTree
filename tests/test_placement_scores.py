@@ -11,6 +11,7 @@ collapses that difference.
 import numpy as np
 import pandas as pd
 import pytest
+from dataclasses import replace
 from ete4 import Tree
 
 from sntree.io.io_preprocess import build_all
@@ -120,6 +121,25 @@ def _uniform_params(cna_tree):
     return dict(
         alpha=ALPHA, beta=BETA,
         pi_b=np.full(n, 1.0 / n), pi_0=0.5, p0=P0,
+    )
+
+
+def test_int16_counts_match_int64_likelihoods_and_placements():
+    tree, compact, transitions = _toy_dataset({
+        "clade": CLADE_CELLS, "scattered": SCATTERED_CELLS, "empty": [],
+    })
+    assert compact.ks.dtype == compact.ns.dtype == np.int16
+    wide = replace(compact, ks=compact.ks.astype(np.int64),
+                   ns=compact.ns.astype(np.int64))
+    kwargs = dict(alpha=ALPHA, beta=BETA, p0=P0)
+    batch = np.arange(compact.n_snvs)
+    compact_ll = locus_loglik_batch(tree, compact, transitions, batch, **kwargs)
+    wide_ll = locus_loglik_batch(tree, wide, transitions, batch, **kwargs)
+    for actual, expected in zip(compact_ll, wide_ll):
+        np.testing.assert_array_equal(actual, expected)
+    pd.testing.assert_frame_equal(
+        score_placements(tree, compact, transitions, **_uniform_params(tree)),
+        score_placements(tree, wide, transitions, **_uniform_params(tree)),
     )
 
 
