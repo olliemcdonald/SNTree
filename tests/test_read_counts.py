@@ -101,6 +101,51 @@ def test_multiple_vcfs_keep_int16(vcf_path):
     assert all(table.to_numpy().dtype == np.int16 for table in tables)
 
 
+@pytest.mark.parametrize("fill", [0, 7])
+@pytest.mark.parametrize("normal_ad,expected", [
+    (".", (None, None)),
+    (".,.", (None, None)),
+    (".,3", (None, 3)),
+    ("97,.", (97, None)),
+    ("97", (97, None)),
+])
+def test_missing_normal_counts_use_fill_and_remain_int16(
+    tmp_path, normal_ad, expected, fill,
+):
+    path = _write_vcf(
+        tmp_path / "missing_normal.vcf",
+        f"1\t100\t.\tA\tC\t.\tPASS\t.\tAD\t9,1\t{normal_ad}\t0,1\n",
+    )
+    vcf = VCF(path)
+    try:
+        ids, ref, alt, normal_ref, normal_alt = vcf_to_tables(
+            vcf, normal_name="normal", fill_missing_normal_with=fill,
+        )
+    finally:
+        vcf.close()
+    assert ids == ["1:100:A>C"]
+    assert normal_ref.dtype == normal_alt.dtype == np.int16
+    assert (normal_ref.iloc[0], normal_alt.iloc[0]) == tuple(
+        fill if value is None else value for value in expected
+    )
+    np.testing.assert_array_equal(ref, [[9, 0]])
+    np.testing.assert_array_equal(alt, [[1, 1]])
+
+
+@pytest.mark.parametrize("normal_ad", ["-1,0", "0,-1", "32768,0", "0,32768"])
+def test_invalid_normal_counts_still_raise(tmp_path, normal_ad):
+    path = _write_vcf(
+        tmp_path / "invalid_normal.vcf",
+        f"1\t100\t.\tA\tC\t.\tPASS\t.\tAD\t9,1\t{normal_ad}\t0,1\n",
+    )
+    vcf = VCF(path)
+    try:
+        with pytest.raises(ValueError, match="Normal .* counts.*32767"):
+            vcf_to_tables(vcf, normal_name="normal")
+    finally:
+        vcf.close()
+
+
 @pytest.mark.parametrize("counts", ["32768,1", "-1,1", ".,1"])
 @pytest.mark.parametrize("subset", [False, True])
 def test_vcf_rejects_overflow_and_missing_counts(tmp_path, counts, subset):

@@ -5,6 +5,17 @@ import numpy as np # type: ignore
 import pandas as pd # type: ignore
 from sntree.io.read_counts import READ_COUNT_DTYPE, as_read_counts
 
+# cyvcf2 exposes HTSlib's missing-integer and end-of-vector markers in AD.
+_VCF_MISSING_INTS = (np.iinfo(np.int32).min, np.iinfo(np.int32).min + 1)
+
+
+def _normal_ad_count(value, fill_missing_with):
+    """Use the normal placeholder for missing AD entries, not arbitrary negatives."""
+    if value in _VCF_MISSING_INTS:
+        return fill_missing_with
+    return int(value)
+
+
 def _map_sample_names(samples, name_map=None):
     if not name_map:
         return list(samples)
@@ -46,7 +57,8 @@ def vcf_to_tables(
     # vcf: cyvcf2 VCF object
     # min_cells: minimum number of cells that must have >0 alt reads to keep the variant
     # normal_name: sample name of the normal cell (if any) in the VCF ex. "XXX/X_normal_markdup.bam"
-    # fill_missing_normal_with: value to fill in for normal ref/alt counts if normal is not present
+    # fill_missing_normal_with: placeholder if normal is absent or its AD entry
+    # is missing. Normal counts are not currently used for inference.
     samples = list(vcf.samples)
 
     # Figure out normal (optional) and cells
@@ -96,8 +108,8 @@ def vcf_to_tables(
             alt_rows.append(as_read_counts(alt_col[cell_idx], "VCF alternate counts"))
 
             if has_normal:
-                norm_ref.append(int(ref_all[normal_idx]))
-                norm_alt.append(int(alt_col[normal_idx]))
+                norm_ref.append(_normal_ad_count(ref_all[normal_idx], fill_missing_normal_with))
+                norm_alt.append(_normal_ad_count(alt_col[normal_idx], fill_missing_normal_with))
             else:
                 norm_ref.append(fill_missing_normal_with)
                 norm_alt.append(fill_missing_normal_with)
