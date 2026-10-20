@@ -210,7 +210,7 @@ def refine_group_tree(
         p0,
     )
 
-    score = make_local_cached_scorer(delta, total_absent)
+    score = make_local_cached_scorer(delta, total_absent, dataset.leaf_names)
 
     # ---- Initial scoring ----
 
