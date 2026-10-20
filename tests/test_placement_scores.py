@@ -349,12 +349,8 @@ def test_snv_mask_selects_exactly_those_loci_with_unchanged_values(scored):
 
 # ── Status handling ───────────────────────────────────────────────────────
 
-def test_cn_zero_clade_yields_non_ok_statuses_with_nan_margin():
-    """
-    A locus in a segment where most branches are impossible (CN=0) must be
-    flagged, not silently scored: llr_margin is NaN when fewer than two
-    branches are finite, rather than +inf.
-    """
+def test_cn_zero_does_not_make_fixed_diploid_present_placements_impossible():
+    """CN=0 can affect false positives but cannot suppress a present mutation."""
     all_node_names = [n.name for n in _toy_tree()[0].traverse()]
     cn_zero_everywhere = {name: 0 for name in all_node_names}
     cna_tree, snv_dataset, transitions = _toy_dataset(
@@ -365,10 +361,8 @@ def test_cn_zero_clade_yields_non_ok_statuses_with_nan_margin():
     )
 
     status = df.loc["clade", "score_status"]
-    assert status != SCORE_STATUS_OK
-    assert status in (SCORE_STATUS_NO_VALID_BRANCH, SCORE_STATUS_NO_MARGIN)
-    assert np.isnan(df.loc["clade", "llr_margin"])
-    assert not np.isposinf(df.loc["clade", "llr_margin"])
+    assert status == SCORE_STATUS_OK
+    assert np.isfinite(df.loc["clade", "llr_margin"])
 
     # Non-ok loci still receive a MAP placement under the existing logic
     assert df.loc["clade", "node"] in ["Null"] + [

@@ -274,6 +274,7 @@ def run_soft_em(
     t0 = time.time()
 
     # ── Warm start from pickle ─────────────────────────────────────────────
+    p0, p1_fp_mode = config.p0, config.p1_fp_mode
     if warm_start_pkl is not None:
         print(f"[{now()}] Loading warm-start from {warm_start_pkl}")
         with open(warm_start_pkl, "rb") as f:
@@ -285,6 +286,8 @@ def run_soft_em(
         if init_pi_b is None:
             init_pi_b  = ws["pi_b"]
         warm_node_names = ws.get("node_names", None)
+        p0 = ws.get("p0", p0)
+        p1_fp_mode = ws.get("p1_fp_mode", p1_fp_mode)
     else:
         # Node names may be supplied directly alongside init_pi_b (pipeline pass 2)
         warm_node_names = init_node_names
@@ -333,8 +336,8 @@ def run_soft_em(
         init_pi0=config.pi0,
         init_pi_b=init_pi_b,
         alpha_dir=config.alpha_dir,
-        p0=config.p0,
-        p1_fp_mode="one_over_c",
+        p0=p0,
+        p1_fp_mode=p1_fp_mode,
         max_iter=config.soft_em_max_iter,
         tol=1e-4,
         joint=joint,
@@ -351,8 +354,8 @@ def run_soft_em(
         cna_tree, snv_dataset, transitions,
         alpha=alpha, beta=beta,
         pi_b=pi_b, pi_0=pi_0,
-        p0=config.p0,
-        p1_fp_mode="one_over_c",
+        p0=p0,
+        p1_fp_mode=p1_fp_mode,
         batch_size=config.batch_size,
     )
     placements = placements_df["node"].to_dict()
@@ -390,8 +393,9 @@ def run_soft_em(
             "beta":        beta,
             "history":     history,
             # Scoring conditions, so 'sntree score' can reproduce this fit
-            "p0":          config.p0,
-            "p1_fp_mode":  "one_over_c",
+            "p0":          p0,
+            "p1_fp_mode":  p1_fp_mode,
+            "likelihood_model": "fixed_diploid",
             "tree_path":   tree_path,
         }, f)
 

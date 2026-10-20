@@ -18,7 +18,7 @@ def now():
 def load_structures(input_paths, tree_path, verbose=True):
     """
     Load the tree, CNA profiles and SNV read counts and build the unified
-    (CNATree, SNVDataset, TransitionModel) structures.
+    (CNATree, SNVDataset, None). The fixed-diploid model needs no transitions.
 
     Parameters
     ----------

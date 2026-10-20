@@ -82,7 +82,7 @@ def run_em(sample, output_root, config, input_paths):
         init_beta=config.beta_init,
         p0=config.p0,
         pi0=config.pi0,
-        p1_fp_mode="one_over_c",
+        p1_fp_mode=config.p1_fp_mode,
         max_iter=config.em_max_iter,
         tol=1e-4,
         damp=0.5,
@@ -111,6 +111,9 @@ def run_em(sample, output_root, config, input_paths):
             "placements":   placements_named,
             "loglikelihoods": likelihoods,
             "history":      history,
+            "p0": config.p0,
+            "p1_fp_mode": config.p1_fp_mode,
+            "likelihood_model": "fixed_diploid",
         }, f)
 
     # ---- Save readable placements ----

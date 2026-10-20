@@ -2,9 +2,37 @@
 sntree: Single-Cell SNV Phylogenetic Inference and Refinement
 ------------------------------------------------------------
 
+This branch (diploid_model) uses a fixed-diploid present-mutation likelihood.
+The expected VAF of a present mutation is always 0.5, including at CN=0.
+The false-positive event probability alpha and false-negative probability beta
+remain estimated by EM. The false-positive component's allele fraction is a
+separate setting:
+
+    --p1-fp-mode one_over_c     Default: 1/CN at each tip (0 when CN=0)
+    --p1-fp-mode 0.17           Example: a constant false-positive allele fraction
+
+This option affects false positives only; it never changes present VAF=0.5.
+It is available on the pipeline and individual fitting/refinement commands.
+Standalone scoring and pickle-based warm starts reuse the saved p0 and
+p1_fp_mode. Standalone refinement loads those settings from the prior fit
+unless explicitly overridden.
+
+Placement likelihoods use compiled postorder subtree sums rather than CNA
+multiplicity states, transition convolutions, or an outside-likelihood pass.
+CNA transition matrices and dense node-by-cell descendant masks are not built.
+Soft EM accumulates branch responsibilities along the tree, and both EM modes
+reuse each batch's binomial components for scoring and error updates.
+CNA profiles remain in use for grouping/refinement and the one_over_c FP mode.
+The active workflow does not call the legacy src/sntree/diploid implementation.
+
+Use a fresh output root for this model: refinement resumes completed group
+files, and prior CNA-aware or old diploid fits are not interchangeable with
+this likelihood. Saved fits record likelihood_model=fixed_diploid. NNI's
+cell-indexing correction is included; log-likelihood totals remain sums.
+
 sntree performs:
 
-1) CNA-aware maximum likelihood SNV placement
+1) Fixed-diploid maximum likelihood SNV placement
 2) Soft branch-proportion inference (relative mutation burden pi_b per branch)
 3) Local SNV-based refinement of CNA-identical subtrees
 4) Optionally: hard EM estimation of sequencing error parameters (alpha, beta)
@@ -44,7 +72,7 @@ Output: output_root/<sample>/sntree/tree_preprocessed.new
 
 Soft branch-proportion EM. Estimates pi_b (relative mutation burden per
 branch) and alpha/beta using all candidate sites without hard calls.
-Reuses the inside-outside DP scores from the CNA-aware likelihood model.
+Uses fixed-diploid batched subtree likelihood scores.
 
     sntree soft-em <sample> <input_root> <output_root>
 
@@ -389,8 +417,8 @@ Clock correction (downstream):
 Notes
 ------------------------------------------------------------
 
-- The EM stage uses the CNA-aware inside-outside likelihood model.
-- The refinement stage uses a constant-CN cached likelihood for efficiency.
+- The EM stage uses the fixed-diploid subtree likelihood backend.
+- Refinement caches the same fixed-diploid emissions; CN affects only the FP mode.
 - All stages are independent and resumable.
 
 End of README.

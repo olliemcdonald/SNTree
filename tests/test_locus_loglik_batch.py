@@ -1,46 +1,41 @@
-def test_compare_batch(tree, snv_dict, snv_ids,
-                       cna_tree, snv_dataset, transitions,
-                       batch_size=20):
-    import numpy as np
-    from ..likelihood import locus_loglik_batch as old_batch
-    from ..likelihood_new.locus_loglik_batch_new import locus_loglik_batch_new
+"""Placement scores for singleton, unary, multifurcating, and unbalanced trees."""
 
-    # ensure Python list
-    if not isinstance(snv_ids, (list, tuple)):
-        snv_ids = list(snv_ids)
+import numpy as np
+import pandas as pd
+import pytest
+from ete4 import Tree
+from scipy.stats import binom
 
-    some_snvs = snv_ids[:batch_size]
+from sntree.io.io_preprocess import build_all
+from sntree.likelihood.locus_loglik_batch import locus_loglik_batch
 
-    # ---- OLD ----
-    old_out = old_batch(tree, some_snvs, snv_dict)
 
-    # ---- NEW ----
-    snv_idx_map = {snv_id: i for i, snv_id in enumerate(snv_dataset.snv_ids)}
-    some_indices = [snv_idx_map[s] for s in some_snvs]
-
-    new_out = locus_loglik_batch_new(cna_tree, snv_dataset, transitions, some_indices)
-
-    # ---- COMPARE ----
-    for snv in some_snvs:
-        print(f"\nComparing SNV {snv}")
-        old_lik = old_out[snv]
-        new_lik = new_out[snv]
-
-        for node_obj in old_lik.keys():
-
-            o = old_lik[node_obj]
-
-            # convert ETE node → integer index
-            if node_obj is None:
-                node_idx = None
-            else:
-                node_idx = cna_tree.ete_to_idx[node_obj]
-
-            n = new_lik[node_idx]
-
-            if abs(o - n) > 1e-5:
-                print(f"Mismatch at node {node_obj}: old={o}, new={n}, diff={abs(o-n)}")
-                return False
-
-    print("\n✔ All likelihood values match within tolerance ✔")
-    return True
+@pytest.mark.parametrize('newick', [
+    'a;', '(a)root;', '((a)x,b,c)root;', '(((a,b)x,c)y,d)root;',
+])
+def test_batch_matches_named_leaf_enumeration(newick):
+    tree = Tree(newick, parser=1)
+    names = [leaf.name for leaf in tree.leaves()]
+    for node in tree.traverse():
+        node.props['CN_profile'] = {0: {'cn_tot': 2, 'cn_a': 1, 'cn_b': 1}}
+        if node.is_leaf:
+            node.props['cell_id'] = node.name
+    rng = np.random.default_rng(72)
+    ks = rng.integers(0, 11, size=(4, len(names)))
+    ns = np.full_like(ks, 10)
+    ks[-1], ns[-1] = 0, 0
+    ct, ds, transitions = build_all(
+        tree, pd.DataFrame({'idx': [0]}), None,
+        pd.DataFrame(ns-ks, columns=names), pd.DataFrame(ks, columns=names),
+        pd.DataFrame({'snv': np.arange(4), 'cna_idx': 0}),
+    )
+    actual, null = locus_loglik_batch(ct, ds, transitions, np.arange(4), .1, .2, p1_fp_mode=.3)
+    present = np.logaddexp(np.log(.8) + binom.logpmf(ks, ns, .5), np.log(.2) + binom.logpmf(ks, ns, .001))
+    absent = np.logaddexp(np.log(.1) + binom.logpmf(ks, ns, .3), np.log(.9) + binom.logpmf(ks, ns, .001))
+    for u, node in enumerate(ct.idx_to_ete):
+        descendants = {leaf.name for leaf in node.leaves()}
+        mask = np.array([name in descendants for name in names])
+        expected = np.where(mask, present, absent).sum(axis=1)
+        np.testing.assert_allclose(actual[u], expected, atol=1e-12)
+    np.testing.assert_allclose(null, absent.sum(axis=1), atol=1e-12)
+    np.testing.assert_array_equal(actual[:, -1], 0.)

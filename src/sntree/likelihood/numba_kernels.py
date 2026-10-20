@@ -183,3 +183,69 @@ def logsumexp_axis2(mat):
     mat_arr = np.asarray(mat, dtype=np.float64)
     return _logsumexp_axis2(mat_arr)
 
+
+@njit(parallel=True)
+def placement_loglik_postorder(present, absent, parent, postorder,
+                              node_of_leaf, leaf_order):
+    """Null baseline plus subtree contributions; O(B * (N + L)).
+
+    Track impossible emissions separately so -inf baselines can be replaced
+    by finite present emissions without evaluating -inf + inf.
+    """
+    B, L = present.shape
+    N = parent.size
+    scores = np.empty((N, B), dtype=np.float64)
+    null = np.empty(B, dtype=np.float64)
+    for s in prange(B):
+        sums = np.zeros(N, dtype=np.float64)
+        bad_present = np.zeros(N, dtype=np.int64)
+        bad_absent = np.zeros(N, dtype=np.int64)
+        baseline = 0.0
+        absent_count = 0
+        for col in range(L):
+            if np.isfinite(absent[s, col]):
+                baseline += absent[s, col]
+            else:
+                absent_count += 1
+        null[s] = baseline if absent_count == 0 else -np.inf
+        for u in postorder:
+            lf = node_of_leaf[u]
+            if lf >= 0:
+                col = leaf_order[lf]
+                if np.isfinite(present[s, col]):
+                    sums[u] += present[s, col]
+                else:
+                    bad_present[u] = 1
+                if np.isfinite(absent[s, col]):
+                    sums[u] -= absent[s, col]
+                else:
+                    bad_absent[u] = 1
+            p = parent[u]
+            if p >= 0:
+                sums[p] += sums[u]
+                bad_present[p] += bad_present[u]
+                bad_absent[p] += bad_absent[u]
+            if bad_present[u] == 0 and bad_absent[u] == absent_count:
+                scores[u, s] = baseline + sums[u]
+            else:
+                scores[u, s] = -np.inf
+    return scores, null
+
+
+@njit(parallel=True)
+def branch_weights_to_leaves(weights, parent, preorder, node_of_leaf, leaf_order):
+    """Sum ancestral placement responsibilities into dataset-ordered leaf weights."""
+    N, B = weights.shape
+    out = np.empty((B, leaf_order.size), dtype=np.float64)
+    for s in prange(B):
+        cumulative = np.empty(N, dtype=np.float64)
+        for u in preorder:
+            p = parent[u]
+            cumulative[u] = weights[u, s]
+            if p >= 0:
+                cumulative[u] += cumulative[p]
+            lf = node_of_leaf[u]
+            if lf >= 0:
+                out[s, leaf_order[lf]] = cumulative[u]
+    return out
+

@@ -74,7 +74,7 @@ def run_ml(sample, output_root, config, input_paths):
     )
 
     # ---- Maximum Likelihood Placement ----
-    print(f"[{now()}] Running CNA-aware SNV placement...")
+    print(f"[{now()}] Running fixed-diploid SNV placement...")
     placements, total_ll = loglik_all_snvs(
         cna_tree,
         snv_dataset,
@@ -83,7 +83,7 @@ def run_ml(sample, output_root, config, input_paths):
         beta=config.beta_init,
         p0=config.p0,
         pi0=config.pi0,
-        p1_fp_mode="one_over_c",
+        p1_fp_mode=config.p1_fp_mode,
         min_alt_reads=2,
         min_alt_cells=2,
         batch_size=config.batch_size
@@ -111,6 +111,9 @@ def run_ml(sample, output_root, config, input_paths):
         pickle.dump({
             "alpha": config.alpha_init,
             "beta": config.beta_init,
+            "p0": config.p0,
+            "p1_fp_mode": config.p1_fp_mode,
+            "likelihood_model": "fixed_diploid",
             "loglikelihood_total": total_ll,
             "placements": placements_named,
             "loglikelihoods": likelihoods

@@ -13,7 +13,7 @@ class CNATree:
     parent: np.ndarray              # shape (N_nodes,), parent index or -1
     children: list                  # list of lists: children[i] = list of child indices
     is_leaf: np.ndarray             # bool array shape (N_nodes,)
-    leaf_order: np.ndarray          # index → node index
+    leaf_order: np.ndarray          # tree leaf index → dataset column
     node_of_leaf: np.ndarray        # node index → leaf index or -1
 
     # CN data
@@ -30,7 +30,7 @@ class CNATree:
 
     edge_id: list = field(default_factory=list)  # list of dicts: edge_id[i][child] = eid
 
-    leaf_desc_mask: np.ndarray = field(default=None)  # (N_nodes, N_leaves)
+    leaf_desc_mask: np.ndarray = field(default=None)  # legacy only; not built for diploid
     leaf_to_node: np.ndarray = field(default=None) # shape (n_leaves,)
 
     @property

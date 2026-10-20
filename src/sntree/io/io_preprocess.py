@@ -75,21 +75,8 @@ def build_cna_tree(ete_tree, cna_profiles, sample_mapping):
             cur = cur.up
         depth[i] = d
 
-    # ---- 8. PRECOMPUTE leaf-descendant mask ----
-    L = n_leaves
-    leaf_desc_mask = np.zeros((n_nodes, L), dtype=bool)
-
-    # bottom-up DP
-    for u in postorder:
-        # mark if this node is a leaf
-        leaf_idx = node_of_leaf[u]
-        if leaf_idx != -1:
-            leaf_desc_mask[u, leaf_idx] = True
-        # OR children’s masks
-        for ch in children[u]:
-            leaf_desc_mask[u] |= leaf_desc_mask[ch]
-
-    # ---- 9. Construct CNATree ----
+    # Descendant membership is accumulated along the tree when needed.
+    # No dense node-by-cell mask is needed by the fixed-diploid backend.
     return CNATree(
         parent=parent,
         children=children,
@@ -103,7 +90,7 @@ def build_cna_tree(ete_tree, cna_profiles, sample_mapping):
         depth=depth,
         ete_to_idx=ete_to_idx,
         idx_to_ete=idx_to_ete,
-        leaf_desc_mask=leaf_desc_mask
+        leaf_desc_mask=None
     )
 
 
@@ -203,9 +190,9 @@ def build_all(ete_tree, cna_profiles, sample_mapping,
     tree_leaf_names = [node.props["cell_id"] for node in tree.idx_to_ete if node.is_leaf]
     dataset = build_snv_dataset(ref_df, alt_df, snv_df, tree_leaf_names)
 
-    segments = sorted(dataset.snvs_by_seg.keys())
-    transitions, edge_id = build_transition_model(tree, segments)
-    tree.edge_id = edge_id
+    # Preserve the three-item return interface without allocating unused
+    # CNA transitions, edge matrices, or multiplicity states.
+    transitions = None
 
     # IMPORTANT: map leaf order in tree to dataset leaf order
     # dataset.leaf_names contains ref_df column names

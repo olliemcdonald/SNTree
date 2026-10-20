@@ -133,6 +133,7 @@ def refine_group_tree(
     batch_size: int = 64,
     max_iters: int = 50,
     init: str = "nj",
+    p1_fp_mode="one_over_c",
 ) -> Optional[GroupResult]:
 
     group_cells = list(group_cells)
@@ -208,6 +209,7 @@ def refine_group_tree(
         alpha,
         beta,
         p0,
+        p1_fp_mode=p1_fp_mode,
     )
 
     score = make_local_cached_scorer(delta, total_absent, dataset.leaf_names)
@@ -272,6 +274,7 @@ def refine_all_groups(
     batch_size: int = 64,
     max_iters: int = 50,
     init: str = "nj",
+    p1_fp_mode="one_over_c",
 ):
 
     print(f"[{now()}] Starting subtree refinement")
@@ -367,6 +370,7 @@ def refine_all_groups(
             batch_size=batch_size,
             max_iters=max_iters,
             init=init,
+            p1_fp_mode=p1_fp_mode,
         )
 
         if res is None:

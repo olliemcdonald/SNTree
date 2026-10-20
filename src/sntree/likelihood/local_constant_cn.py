@@ -1,20 +1,14 @@
-"""
-Constant-CN local likelihood for subtree refinement.
+"""Fixed-diploid local likelihood for CNA-identical subtree refinement.
 
-Assumptions:
-    - All nodes in the subtree share identical total CN.
-    - No CNA transitions below MRCA.
-    - Expected VAF for present mutation = 1 / CN.
-    - No transition matrix, no DP, no multiplicity convolution.
-
-Designed to be used inside NNI or tree rearrangement (SPR) refinement.
+Present mutations use VAF 0.5. CN profiles affect only the configurable
+false-positive emission; no CNA transitions are evaluated.
 """
 
 from typing import Dict, Mapping, Sequence, Tuple
 import numpy as np # type: ignore
 from ete4 import Tree # type: ignore
 
-from sntree.likelihood.numba_kernels import logpmf_binom, logsumexp2_matrix
+from sntree.likelihood.leaf_emissions import leaf_emissions, validate_fp_mode
 
 
 # -------------------------------------------------------------------------
@@ -29,53 +23,18 @@ def build_local_likelihood_cache(
     alpha: float,
     beta: float,
     p0: float,
+    p1_fp_mode="one_over_c",
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Precompute delta and total_absent for constant-CN subtree model.
-
-    CN is constant across subtree, but may vary by genomic segment.
-    """
-
-    S, L = ks.shape
-
-    # --- Build per-SNV p1 vector ---
-    p1_vec = np.zeros(S, dtype=np.float64)
-
-    for s in range(S):
-        seg = int(snv_segments[s])
-        cn_seg = cn_profile[seg]["cn_tot"]
-
-        if cn_seg <= 0:
-            p1_vec[s] = 0.0
-        else:
-            p1_vec[s] = 1.0 / cn_seg
-
-    # Broadcast to (S, L)
-    p1_mat = p1_vec[:, None]
-
-    # Binomial logpmf
-    lp_present = logpmf_binom(ks, ns, p1_mat)
-    lp_absent  = logpmf_binom(ks, ns, p0)
-
-    log1mb = np.log(1.0 - beta)
-    logb   = np.log(beta)
-    loga   = np.log(alpha)
-    log1ma = np.log(1.0 - alpha)
-
-    # Present-channel mixture
-    L_present = logsumexp2_matrix(
-        log1mb + lp_present,
-        logb   + lp_absent
-    )
-
-    # Absent-channel mixture
-    L_absent = logsumexp2_matrix(
-        loga   + lp_present,
-        log1ma + lp_absent
-    )
-
-    delta = L_present - L_absent               # (S, L)
-    total_absent = np.sum(L_absent, axis=1)    # (S,)
+    """Cache leaf contributions with a fixed present VAF and separate FP VAF."""
+    mode = validate_fp_mode(p1_fp_mode)
+    if isinstance(mode, float):
+        p1_fp = mode
+    else:
+        cn = np.array([cn_profile[int(seg)]["cn_tot"] for seg in snv_segments])
+        p1_fp = np.divide(1.0, cn, out=np.zeros(cn.shape, dtype=float), where=cn > 0)[:, None]
+    emissions = leaf_emissions(ks, ns, p1_fp, alpha, beta, p0)
+    delta = emissions.present - emissions.absent
+    total_absent = emissions.absent.sum(axis=1)
 
     return delta, total_absent
 

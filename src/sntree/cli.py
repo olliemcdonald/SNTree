@@ -7,13 +7,21 @@ import pickle
 from sntree.config import Config
 
 
+def _parse_fp_mode(value):
+    from sntree.likelihood.leaf_emissions import validate_fp_mode
+    try:
+        return validate_fp_mode(value if value == "one_over_c" else float(value))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def main():
 
     parser = argparse.ArgumentParser(
         prog="sntree",
         description=(
             "SNTree: Phylogeny-aware single-cell SNV inference "
-            "under copy number variation.\n\n"
+            "with a fixed-diploid present-mutation likelihood.\n\n"
             "Typical usage (soft EM, default):\n"
             "  sntree pipeline SAMPLE /input /output\n\n"
             "Staged workflow:\n"
@@ -59,8 +67,11 @@ def main():
         g2.add_argument("--alpha-init",        type=float, help="Initial alpha (FP rate)")
         g2.add_argument("--beta-init",         type=float, help="Initial beta (FN rate)")
         g2.add_argument("--p0",                type=float, help="Background error probability")
+        g2.add_argument("--p1-fp-mode", type=_parse_fp_mode,
+                        help="False-positive allele fraction: one_over_c (default) or a value in [0, 1]. "
+                             "Present-mutation VAF stays 0.5; alpha is the FP event rate.")
         g2.add_argument("--pi0",               type=float, help="Prior null-placement probability")
-        g2.add_argument("--batch-size",        type=int,   help="Batch size for likelihood DP")
+        g2.add_argument("--batch-size",        type=int,   help="Batch size for likelihood evaluation")
         g2.add_argument("--nni-max-iters",     type=int,   help="Max NNI iterations")
         g2.add_argument("--em-max-iters",      type=int,   help="Max hard EM iterations")
         g2.add_argument("--soft-em-max-iters", type=int,   help="Max soft EM iterations (default 50)")
@@ -77,7 +88,7 @@ def main():
     # ── ml ────────────────────────────────────────────────────────────────
     sp_ml = subparsers.add_parser(
         "ml",
-        help="CNA-aware maximum likelihood SNV placement",
+        help="Fixed-diploid maximum likelihood SNV placement",
     )
     add_common_args(sp_ml)
 
@@ -236,6 +247,7 @@ def main():
     if getattr(args, "alpha_init",        None) is not None: config.alpha_init        = args.alpha_init
     if getattr(args, "beta_init",         None) is not None: config.beta_init         = args.beta_init
     if getattr(args, "p0",                None) is not None: config.p0                = args.p0
+    if getattr(args, "p1_fp_mode",        None) is not None: config.p1_fp_mode        = args.p1_fp_mode
     if getattr(args, "pi0",               None) is not None: config.pi0               = args.pi0
     if getattr(args, "batch_size",        None) is not None: config.batch_size        = args.batch_size
     if getattr(args, "nni_max_iters",     None) is not None: config.nni_max_iters     = args.nni_max_iters
@@ -323,6 +335,10 @@ def main():
                 soft_res = pickle.load(f)
             alpha = float(soft_res["alpha"])
             beta  = float(soft_res["beta"])
+            if args.p0 is None:
+                config.p0 = soft_res.get("p0", config.p0)
+            if args.p1_fp_mode is None:
+                config.p1_fp_mode = soft_res.get("p1_fp_mode", config.p1_fp_mode)
             import pandas as pd
             placements = pd.read_csv(soft_place, sep="\t", index_col="snv")["node"].to_dict()
 
@@ -332,6 +348,10 @@ def main():
             placements = em_res["placements"]
             alpha      = em_res["alpha"]
             beta       = em_res["beta"]
+            if args.p0 is None:
+                config.p0 = em_res.get("p0", config.p0)
+            if args.p1_fp_mode is None:
+                config.p1_fp_mode = em_res.get("p1_fp_mode", config.p1_fp_mode)
 
         else:
             raise RuntimeError(
