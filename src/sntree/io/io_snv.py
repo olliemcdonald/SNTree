@@ -16,6 +16,12 @@ def _normal_ad_count(value, fill_missing_with):
     return int(value)
 
 
+def _cell_ad_counts(values, name):
+    """Treat missing cell AD entries as zero reads; other invalid counts still raise."""
+    values = np.where(np.isin(values, _VCF_MISSING_INTS), 0, values)
+    return as_read_counts(values, name)
+
+
 def _map_sample_names(samples, name_map=None):
     if not name_map:
         return list(samples)
@@ -104,8 +110,8 @@ def vcf_to_tables(
                 continue
 
             variant_ids.append(f"{rec.CHROM}:{rec.POS}:{rec.REF}>{a}")
-            ref_rows.append(as_read_counts(ref_all[cell_idx], "VCF reference counts"))
-            alt_rows.append(as_read_counts(alt_col[cell_idx], "VCF alternate counts"))
+            ref_rows.append(_cell_ad_counts(ref_all[cell_idx], "VCF reference counts"))
+            alt_rows.append(_cell_ad_counts(alt_col[cell_idx], "VCF alternate counts"))
 
             if has_normal:
                 norm_ref.append(_normal_ad_count(ref_all[normal_idx], fill_missing_normal_with))
@@ -259,8 +265,8 @@ def vcf_subset_to_tables(
 
             alt_col = AD[:, 1 + j]
             variant_ids.append(snv_id)
-            ref_rows.append(as_read_counts(ref_all[cell_idx], "VCF reference counts"))
-            alt_rows.append(as_read_counts(alt_col[cell_idx], "VCF alternate counts"))
+            ref_rows.append(_cell_ad_counts(ref_all[cell_idx], "VCF reference counts"))
+            alt_rows.append(_cell_ad_counts(alt_col[cell_idx], "VCF alternate counts"))
 
     if len(variant_ids) == 0:
         ref_df = pd.DataFrame(columns=cell_names, dtype=READ_COUNT_DTYPE)
