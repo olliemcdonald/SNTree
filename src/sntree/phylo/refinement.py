@@ -238,6 +238,9 @@ def refine_group_tree(
             best_ll = new_ll
             placements = new_pl
 
+    # NNI_step reorders children in place, so recompute placements on the final tree
+    placements, best_ll = score(ete_tree)
+
     # ---- Convert placements to assignment table ----
 
     # Map local node indices back to node names
