@@ -10,7 +10,7 @@ Assumptions:
 Designed to be used inside NNI or tree rearrangement (SPR) refinement.
 """
 
-from typing import Dict, Tuple
+from typing import Dict, Mapping, Sequence, Tuple
 import numpy as np # type: ignore
 from ete4 import Tree # type: ignore
 
@@ -84,8 +84,11 @@ def build_local_likelihood_cache(
 # 2. Precompute subtree leaf indices (per tree topology)
 # -------------------------------------------------------------------------
 
-def compute_descendant_leaf_indices(tree: Tree):
+def compute_descendant_leaf_indices(tree: Tree, leaf_columns: Mapping[str, int]):
     """
+    Resolve descendants to fixed cache columns by cell identity, not traversal
+    order, which changes during tree rearrangements.
+
     Returns:
         node_list        : list of nodes in postorder
         node_to_leaves   : dict[node_idx] -> np.array of leaf indices
@@ -94,14 +97,12 @@ def compute_descendant_leaf_indices(tree: Tree):
     node_list = list(tree.traverse("postorder"))
     node_index = {node: i for i, node in enumerate(node_list)}
 
-    leaf_nodes = list(tree.leaves())
-    leaf_index = {leaf: i for i, leaf in enumerate(leaf_nodes)}
-
     node_to_leaves = {}
 
     for i, node in enumerate(node_list):
         if node.is_leaf:
-            node_to_leaves[i] = np.array([leaf_index[node]], dtype=int)
+            cell_id = node.props.get("cell_id", node.name)
+            node_to_leaves[i] = np.array([leaf_columns[cell_id]], dtype=int)
         else:
             idxs = []
             for ch in node.children:
@@ -120,6 +121,7 @@ def score_tree_local_cached(
     tree: Tree,
     delta: np.ndarray,          # (S, L)
     total_absent: np.ndarray,   # (S,)
+    leaf_columns: Mapping[str, int],
 ) -> Tuple[Dict[int, int], float]:
     """
     Score tree using precomputed delta.
@@ -129,7 +131,7 @@ def score_tree_local_cached(
         total_ll   : float
     """
 
-    node_list, node_to_leaves = compute_descendant_leaf_indices(tree)
+    node_list, node_to_leaves = compute_descendant_leaf_indices(tree, leaf_columns)
 
     S, L = delta.shape
     N = len(node_list)
@@ -165,12 +167,18 @@ def score_tree_local_cached(
 def make_local_cached_scorer(
     delta: np.ndarray,
     total_absent: np.ndarray,
+    leaf_names: Sequence[str],
 ):
     """
-    Returns a function score(tree) -> (placements, total_ll)
+    Returns a function score(tree) -> (placements, total_ll).
+
+    leaf_names must give the cell identities in delta's column order.
     """
+    leaf_columns = {name: i for i, name in enumerate(leaf_names)}
+    if len(leaf_names) != delta.shape[1] or len(leaf_columns) != len(leaf_names):
+        raise ValueError("leaf_names must uniquely identify every cache column")
 
     def score(tree: Tree):
-        return score_tree_local_cached(tree, delta, total_absent)
+        return score_tree_local_cached(tree, delta, total_absent, leaf_columns)
 
     return score
