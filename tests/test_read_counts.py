@@ -146,9 +146,31 @@ def test_invalid_normal_counts_still_raise(tmp_path, normal_ad):
         vcf.close()
 
 
-@pytest.mark.parametrize("counts", ["32768,1", "-1,1", ".,1"])
+@pytest.mark.parametrize("counts,expected", [
+    (".", (0, 0)), (".,.", (0, 0)), (".,4", (0, 4)), ("6,.", (6, 0)), ("6", (6, 0)),
+])
 @pytest.mark.parametrize("subset", [False, True])
-def test_vcf_rejects_overflow_and_missing_counts(tmp_path, counts, subset):
+def test_missing_cell_counts_fill_zero(tmp_path, counts, expected, subset):
+    path = _write_vcf(
+        tmp_path / "missing_cell.vcf",
+        f"1\t100\t.\tA\tC\t.\tPASS\t.\tAD\t{counts}\t0,0\t0,1\n",
+    )
+    vcf = VCF(path)
+    try:
+        if subset:
+            _, ref, alt = vcf_subset_to_tables(vcf, ["1:100:A>C"], normal_name="normal")
+        else:
+            _, ref, alt, _, _ = vcf_to_tables(vcf, normal_name="normal")
+    finally:
+        vcf.close()
+    assert ref.to_numpy().dtype == alt.to_numpy().dtype == np.int16
+    np.testing.assert_array_equal(ref, [[expected[0], 0]])
+    np.testing.assert_array_equal(alt, [[expected[1], 1]])
+
+
+@pytest.mark.parametrize("counts", ["32768,1", "-1,1"])
+@pytest.mark.parametrize("subset", [False, True])
+def test_vcf_rejects_overflow_and_negative_counts(tmp_path, counts, subset):
     path = _write_vcf(
         tmp_path / "invalid.vcf",
         f"1\t100\t.\tA\tC\t.\tPASS\t.\tAD\t{counts}\t0,0\t0,1\n",
